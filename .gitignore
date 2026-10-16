@@ -1,0 +1,23 @@
+# Gradle
+.gradle/
+build/
+app/build/
+
+# Local machine configuration (SDK path differs per machine)
+local.properties
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# Signing keys and private configuration
+*.keystore
+*.jks
+signing.properties
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+

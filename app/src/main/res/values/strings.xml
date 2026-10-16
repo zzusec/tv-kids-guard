@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">电视时长管控</string>
+    <string name="accessibility_description">时间用完后，任何应用被打开时立即拉回锁屏界面。</string>
+</resources>
+

@@ -1,0 +1,220 @@
+#!/usr/bin/env bash
+# Host-side controller for the TV Kid Guard on-device daemon.
+#
+# Nothing is installed on the television, so there is no app icon and nothing to uninstall.
+# This script only talks to the TV over adb: it pushes the daemon, reads its state, and sends
+# one-line commands. The parent does everything from the command line.
+#
+# Every operation is deliberately reduced to as few adb connections as possible: the adbd on
+# older BRAVIA sets stops answering when connections come in bursts.
+#
+# Usage:
+#   tvguardctl [serial] <command> [args]
+#
+# Commands:
+#   deploy              push the daemon and start it
+#   status              show today's usage, limit, foreground app and daemon state
+#   logs [n]            show the last n daemon log lines (default 30)
+#   unlock              no limit for the rest of today
+#   lock                re-arm today's limit
+#   bonus <minutes>     add minutes to today's allowance
+#   limit <minutes>     change the daily allowance
+#   apps [pkg ...]      show, or replace, the list of watched packages
+#   reset               clear today's usage
+#   enable | disable    pause or resume enforcement without removing anything
+#   stop                stop the daemon (state and config are kept)
+#   watchdog            start the daemon again if it is not running
+#   install-watchdog    install a macOS launchd agent that runs watchdog every 5 minutes
+#   uninstall-watchdog  remove that agent
+#
+# Set TVGUARD_SERIAL to avoid passing the serial every time.
+
+set -u -o pipefail
+
+DIR=/data/local/tmp/tvguard
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+DAEMON_SRC="$SCRIPT_DIR/tvguard-daemon.sh"
+PLIST="$HOME/Library/LaunchAgents/com.hx10.tvguard.watchdog.plist"
+LABEL="com.hx10.tvguard.watchdog"
+
+DEFAULT_APPS="org.smarttube.stable com.gitvdemo.video com.github.mytv.android top.yogiczy.slcs.tv com.aesq.yh"
+
+SERIAL="${TVGUARD_SERIAL:-}"
+if [ -z "$SERIAL" ] && [ "$#" -gt 0 ] && [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$|^[A-Za-z0-9._:-]+:[0-9]+$|^[A-Za-z0-9]{8,}$ ]]; then
+  SERIAL="$1"
+  shift
+fi
+[ -n "$SERIAL" ] || { printf 'error: 未指定电视。用 TVGUARD_SERIAL 或第一个参数给出 IP/序列号。\n' >&2; exit 1; }
+[[ "$SERIAL" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && SERIAL="${SERIAL}:5555"
+
+command -v adb >/dev/null 2>&1 || { printf 'error: 找不到 adb\n' >&2; exit 1; }
+
+tv() { adb -s "$SERIAL" "$@"; }
+
+# The 2015 BRAVIA adbd goes offline under bursts. Reconnect at most twice, without hammering.
+ensure_online() {
+  local attempt state
+  for attempt in 1 2 3; do
+    state=$(tv get-state 2>/dev/null || true)
+    [ "$state" = "device" ] && return 0
+    adb connect "$SERIAL" >/dev/null 2>&1 || true
+    state=$(tv get-state 2>/dev/null || true)
+    [ "$state" = "device" ] && return 0
+    [ "$attempt" -lt 3 ] && sleep 3
+  done
+  printf 'error: 电视未连接（%s）。\n' "$SERIAL" >&2
+  printf '如果反复失败，请在电视上把「ADB 调试」关掉再打开（或重启电视）。\n' >&2
+  return 1
+}
+
+# Everything the remote side needs, in one connection.
+remote_state() {
+  tv shell "
+    PID=\$(cat $DIR/daemon.pid 2>/dev/null)
+    echo '--- config ---'; cat $DIR/config 2>/dev/null
+    echo '--- state ---'; cat $DIR/state 2>/dev/null
+    echo '--- daemon ---'
+    if [ -n \"\$PID\" ] && [ -d /proc/\$PID ]; then echo \"运行中 pid=\$PID\"; else echo '未运行'; fi
+    echo '--- foreground ---'
+    dumpsys activity activities 2>/dev/null | grep -m1 mResumedActivity \
+      | grep -o '[A-Za-z0-9_.]*/[A-Za-z0-9_.\$]*' | head -1 | cut -d/ -f1
+  " 2>/dev/null
+}
+
+cmd_deploy() {
+  ensure_online || return 1
+  [ -f "$DAEMON_SRC" ] || { printf 'error: 找不到 %s\n' "$DAEMON_SRC" >&2; return 1; }
+
+  tv shell "mkdir -p $DIR" >/dev/null 2>&1 || return 1
+  tv push "$DAEMON_SRC" "$DIR/daemon.sh" >/dev/null || return 1
+
+  # One connection does the rest: install, seed the config if absent, start, then report.
+  tv shell "
+    chmod 755 $DIR/daemon.sh
+    if [ ! -f $DIR/config ]; then
+      printf 'LIMIT_MINUTES=30\nPOLL_SECONDS=2\nAPPS=$DEFAULT_APPS\n' > $DIR/config
+      echo '已写入默认配置（每日 30 分钟）'
+    fi
+    setsid sh $DIR/daemon.sh >/dev/null 2>&1 < /dev/null &
+    sleep 3
+  " >/dev/null 2>&1
+
+  remote_state
+}
+
+cmd_status() {
+  ensure_online || return 1
+  remote_state
+}
+
+cmd_logs() {
+  ensure_online || return 1
+  local n="${1:-30}"
+  [[ "$n" =~ ^[0-9]+$ ]] || { printf 'error: 行数必须是数字\n' >&2; return 1; }
+  tv shell "tail -n $n $DIR/log 2>/dev/null" 2>/dev/null
+}
+
+send_command() {
+  ensure_online || return 1
+  local line="$1"
+  # Only allow the words the daemon understands; never forward arbitrary input to the TV.
+  case "$line" in
+    unlock|lock|reset|enable|disable|stop) ;;
+    bonus\ [0-9]*) ;;
+    *) printf 'error: 拒绝发送无法识别的命令：%s\n' "$line" >&2; return 1 ;;
+  esac
+  tv shell "printf '%s\n' '$line' >> $DIR/cmd" >/dev/null 2>&1
+  printf '已发送：%s\n' "$line"
+}
+
+# The config file belongs to the host; the daemon only reads it. One connection does the
+# read-modify-write so a change cannot be lost to a concurrent daemon save.
+set_config() {
+  ensure_online || return 1
+  local key="$1" value="$2"
+  [[ "$key" =~ ^(LIMIT_MINUTES|POLL_SECONDS|APPS)$ ]] || { printf 'error: 不支持的配置项\n' >&2; return 1; }
+  [[ "$value" =~ ^[A-Za-z0-9_.\ -]+$ ]] || { printf 'error: 配置值含不允许的字符\n' >&2; return 1; }
+  tv shell "
+    sed 's|^$key=.*|$key=$value|' $DIR/config > $DIR/config.tmp 2>/dev/null
+    grep -q '^$key=' $DIR/config.tmp 2>/dev/null || printf '$key=$value\n' >> $DIR/config.tmp
+    mv $DIR/config.tmp $DIR/config
+    grep '^$key=' $DIR/config
+  " 2>/dev/null
+  printf '守护进程会在 10 秒内读到新配置。\n'
+}
+
+cmd_watchdog() {
+  ensure_online || return 1
+  # Single connection: decide and relaunch on the TV side.
+  tv shell "
+    PID=\$(cat $DIR/daemon.pid 2>/dev/null)
+    if [ -n \"\$PID\" ] && [ -d /proc/\$PID ]; then exit 0; fi
+    grep -q '^ENABLED=0' $DIR/state 2>/dev/null && exit 0
+    [ -f $DIR/daemon.sh ] || exit 0
+    echo '守护进程不在，重新拉起'
+    setsid sh $DIR/daemon.sh >/dev/null 2>&1 < /dev/null &
+  " 2>/dev/null
+}
+
+cmd_install_watchdog() {
+  mkdir -p "$(dirname "$PLIST")"
+  cat > "$PLIST" <<PLISTEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$SCRIPT_DIR/tvguardctl</string>
+    <string>watchdog</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>TVGUARD_SERIAL</key><string>$SERIAL</string></dict>
+  <key>StartInterval</key><integer>300</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardErrorPath</key><string>/tmp/tvguard-watchdog.err</string>
+</dict>
+</plist>
+PLISTEOF
+  launchctl unload "$PLIST" >/dev/null 2>&1 || true
+  launchctl load "$PLIST" && printf '已安装看护任务：每 5 分钟检查一次（%s）\n' "$PLIST"
+  printf '注意：这台机器睡眠时不会检查。电视重启后要等它醒来才会恢复守护进程。\n'
+}
+
+cmd_uninstall_watchdog() {
+  launchctl unload "$PLIST" >/dev/null 2>&1 || true
+  rm -f "$PLIST"
+  printf '已移除看护任务\n'
+}
+
+ACTION="${1:-status}"
+shift || true
+
+case "$ACTION" in
+  deploy)             cmd_deploy ;;
+  status)             cmd_status ;;
+  logs)               cmd_logs "$@" ;;
+  unlock|lock|reset|enable|disable|stop) send_command "$ACTION" ;;
+  bonus)
+    [ "$#" -ge 1 ] || { printf 'error: bonus 需要数值\n' >&2; exit 1; }
+    [[ "$1" =~ ^[0-9]{1,4}$ ]] || { printf 'error: 必须是 1-4 位数字\n' >&2; exit 1; }
+    send_command "bonus $1"
+    ;;
+  limit)
+    [ "$#" -ge 1 ] || { printf 'error: limit 需要数值\n' >&2; exit 1; }
+    [[ "$1" =~ ^[0-9]{1,4}$ ]] || { printf 'error: 必须是 1-4 位数字\n' >&2; exit 1; }
+    set_config LIMIT_MINUTES "$1"
+    ;;
+  apps)
+    if [ "$#" -eq 0 ]; then
+      ensure_online && tv shell "grep '^APPS=' $DIR/config" 2>/dev/null
+    else
+      set_config APPS "$*"
+    fi
+    ;;
+  watchdog)           cmd_watchdog ;;
+  install-watchdog)   cmd_install_watchdog ;;
+  uninstall-watchdog) cmd_uninstall_watchdog ;;
+  *) printf 'unknown command: %s\n' "$ACTION" >&2; sed -n '8,32p' "$0"; exit 1 ;;
+esac
