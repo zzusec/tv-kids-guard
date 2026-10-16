@@ -1,39 +1,75 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#000000"
-    android:gravity="center"
-    android:orientation="vertical"
-    android:padding="48dp">
+    android:fillViewport="true">
 
-    <TextView
-        android:id="@+id/lock_title"
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:id="@+id/lock_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="今日观看时间已用完"
-        android:textColor="#FFFFFF"
-        android:textSize="40sp"
-        android:textStyle="bold" />
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:padding="24dp">
 
-    <TextView
-        android:id="@+id/lock_prompt"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="28dp"
-        android:text="请输入家长密码"
-        android:textColor="#B0B0B0"
-        android:textSize="24sp" />
+        <LinearLayout
+            android:id="@+id/lock_details"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:paddingEnd="24dp">
 
-    <TextView
-        android:id="@+id/lock_input"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="18dp"
-        android:letterSpacing="0.3"
-        android:minHeight="60dp"
-        android:text=""
-        android:textColor="#4FC3F7"
-        android:textSize="44sp"
-        android:textStyle="bold" />
-</LinearLayout>
+            <TextView
+                android:id="@+id/lock_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="今日观看时间已用完"
+                android:textColor="#FFFFFF"
+                android:textSize="32sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/lock_prompt"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="请输入家长密码"
+                android:textColor="#B0B0B0"
+                android:textSize="20sp" />
+
+            <TextView
+                android:id="@+id/lock_input"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:letterSpacing="0.3"
+                android:minHeight="48dp"
+                android:textColor="#4FC3F7"
+                android:textSize="36sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/keypad_column"
+            android:layout_width="320dp"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:id="@+id/keypad_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <Button
+                android:id="@+id/parent_manage"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="12dp"
+                android:text="家长管理"
+                android:visibility="gone" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

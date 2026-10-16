@@ -8,6 +8,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.view.KeyEvent;
 import android.view.WindowManager;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 /** Full-screen parent gate; a dialog over playing video is not an adequate lock. */
@@ -29,6 +30,10 @@ public class AdminAuthActivity extends Activity {
     private boolean visible;
     private boolean openingConsole;
     private boolean authorizedSetup;
+    private RemoteKeypad keypad;
+    private boolean navigationMode = true;
+    private int selectKey = KeyEvent.KEYCODE_UNKNOWN;
+    private boolean selectNavigates;
 
     static void launch(Context ctx) {
         Intent intent = new Intent(ctx, AdminAuthActivity.class);
@@ -75,6 +80,29 @@ public class AdminAuthActivity extends Activity {
         title = findViewById(R.id.lock_title);
         prompt = findViewById(R.id.lock_prompt);
         masked = findViewById(R.id.lock_input);
+        RemoteKeypad.adaptLockLayout(this);
+        keypad = new RemoteKeypad(this, new RemoteKeypad.Listener() {
+            @Override
+            public void onDigit(int digit) {
+                appendDigit(digit);
+                render();
+            }
+
+            @Override
+            public void onDelete() {
+                deleteDigit();
+                render();
+            }
+
+            @Override
+            public void onConfirm() {
+                submit();
+                render();
+            }
+        });
+        LinearLayout container = findViewById(R.id.keypad_container);
+        container.addView(keypad);
+        render();
         GuardService.start(this);
     }
 
@@ -142,34 +170,71 @@ public class AdminAuthActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        if (PinDialog.isVolumeKey(event.getKeyCode())) {
+        int code = event.getKeyCode();
+        if (PinDialog.isVolumeKey(code) || code == KeyEvent.KEYCODE_POWER) {
             return super.dispatchKeyEvent(event);
         }
-        if (event.getAction() != KeyEvent.ACTION_DOWN || event.getRepeatCount() > 0) {
+        int action = event.getAction();
+        if (action != KeyEvent.ACTION_DOWN && action != KeyEvent.ACTION_UP) {
             return true;
         }
-        int code = event.getKeyCode();
-        int digit = PinDialog.digitOf(code);
-        if (code == KeyEvent.KEYCODE_BACK) {
-            onBackPressed();
-        } else if (digit >= 0 && prefs.lockoutRemainingSeconds() == 0L) {
-            if (input.length() < Prefs.PASSWORD_LENGTH) {
-                input.append((char) ('0' + digit));
-            }
-            if (input.length() == Prefs.PASSWORD_LENGTH) {
-                submit();
-            }
-        } else if (code == KeyEvent.KEYCODE_DEL && input.length() > 0) {
-            input.setLength(input.length() - 1);
-        } else if (code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_DPAD_CENTER
-                || code == KeyEvent.KEYCODE_NUMPAD_ENTER) {
-            submit();
+        if (RemoteKeypad.isNavigationKey(code)) {
+            navigationMode = true;
+            return super.dispatchKeyEvent(event);
         }
-        render();
+        if (RemoteKeypad.isSelectKey(code)) {
+            if (action == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                selectKey = code;
+                selectNavigates = navigationMode;
+                if (!selectNavigates) {
+                    submit();
+                    render();
+                }
+            }
+            boolean dispatch = selectKey == code && selectNavigates;
+            if (action == KeyEvent.ACTION_UP) {
+                selectKey = KeyEvent.KEYCODE_UNKNOWN;
+            }
+            return dispatch ? super.dispatchKeyEvent(event) : true;
+        }
+        if (action == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+            int digit = PinDialog.digitOf(code);
+            if (code == KeyEvent.KEYCODE_BACK) {
+                onBackPressed();
+            } else if (digit >= 0) {
+                navigationMode = false;
+                appendDigit(digit);
+            } else if (code == KeyEvent.KEYCODE_DEL) {
+                navigationMode = false;
+                deleteDigit();
+            }
+            render();
+        }
         return true;
     }
 
+    private void appendDigit(int digit) {
+        if (prefs.lockoutRemainingSeconds() > 0L || openingConsole) {
+            return;
+        }
+        if (input.length() < Prefs.PASSWORD_LENGTH) {
+            input.append((char) ('0' + digit));
+        }
+        if (input.length() == Prefs.PASSWORD_LENGTH) {
+            submit();
+        }
+    }
+
+    private void deleteDigit() {
+        if (prefs.lockoutRemainingSeconds() == 0L && input.length() > 0) {
+            input.setLength(input.length() - 1);
+        }
+    }
+
     private void submit() {
+        if (prefs.lockoutRemainingSeconds() > 0L || openingConsole) {
+            return;
+        }
         if (input.length() != Prefs.PASSWORD_LENGTH) {
             error = "请输入 6 位数字密码";
             return;
@@ -231,6 +296,7 @@ public class AdminAuthActivity extends Activity {
         }
         title.setText(stage == CHECK ? "家长验证" : "设置家长密码");
         long wait = prefs.lockoutRemainingSeconds();
+        keypad.setInputEnabled(wait == 0L && !openingConsole);
         if (wait > 0L) {
             input.setLength(0);
             prompt.setText("错误次数过多，请等待 " + wait + " 秒");

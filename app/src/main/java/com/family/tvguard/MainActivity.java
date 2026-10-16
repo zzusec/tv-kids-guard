@@ -12,10 +12,15 @@ import android.os.Looper;
 import android.provider.Settings;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 
 /** Remote-controlled parent panel. Visibility alone is never an authorization. */
 public class MainActivity extends Activity {
@@ -24,6 +29,7 @@ public class MainActivity extends Activity {
     private Prefs prefs;
     private TextView statusText;
     private TextView warnText;
+    private final Map<String, Button> actionButtons = new LinkedHashMap<>();
     private volatile boolean visible;
     private boolean updateExternalActivity;
     private boolean awaitingUpdatePermission;
@@ -66,6 +72,8 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
         statusText = findViewById(R.id.status_text);
         warnText = findViewById(R.id.warn_text);
+        configurePanel();
+        createActionButtons();
         TextView version = findViewById(R.id.version_text);
         try {
             PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), 0);
@@ -74,6 +82,85 @@ public class MainActivity extends Activity {
             version.setText("版本信息不可用");
         }
         GuardService.start(this);
+        refreshStatus();
+        actionButtons.get("12").requestFocus();
+    }
+
+    private void configurePanel() {
+        float density = getResources().getDisplayMetrics().density;
+        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+        int screenHeight = getResources().getDisplayMetrics().heightPixels;
+        View scroll = findViewById(R.id.main_scroll);
+        ViewGroup.LayoutParams panelParams = scroll.getLayoutParams();
+        panelParams.width = Math.min(Math.round(900 * density),
+                Math.max(1, screenWidth - Math.round(48 * density)));
+        scroll.setLayoutParams(panelParams);
+
+        LinearLayout columns = findViewById(R.id.panel_columns);
+        boolean twoColumns = screenWidth > screenHeight && screenWidth / density >= 600;
+        columns.setOrientation(twoColumns ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        View status = findViewById(R.id.status_column);
+        View actions = findViewById(R.id.menu_column);
+        LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
+                twoColumns ? 0 : ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, twoColumns ? 1 : 0);
+        LinearLayout.LayoutParams menuParams = new LinearLayout.LayoutParams(
+                twoColumns ? 0 : ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, twoColumns ? 1 : 0);
+        if (twoColumns) {
+            menuParams.setMarginStart(Math.round(24 * density));
+        } else {
+            menuParams.topMargin = Math.round(20 * density);
+        }
+        status.setLayoutParams(statusParams);
+        actions.setLayoutParams(menuParams);
+    }
+
+    private void createActionButtons() {
+        LinearLayout menu = findViewById(R.id.menu_actions);
+        String[][] actions = {
+                {"00", "关闭面板"}, {"11", "改密码"}, {"12", "每日时长"}, {"13", "检查更新"},
+                {"22", "加时长"}, {"33", "立即锁定"}, {"44", "关闭防护"}, {"99", "启用防护"}
+        };
+        for (String[] action : actions) {
+            String code = action[0];
+            Button button = new Button(this);
+            button.setId(View.generateViewId());
+            button.setTag("action_" + code);
+            button.setText(code + " " + action[1]);
+            RemoteKeypad.styleButton(button);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            params.topMargin = Math.round(6 * getResources().getDisplayMetrics().density);
+            menu.addView(button, params);
+            button.setOnClickListener(view -> executeAction(code));
+            actionButtons.put(code, button);
+        }
+    }
+
+    private boolean isActionAvailable(String code) {
+        switch (code) {
+            case "00":
+            case "11":
+            case "12":
+            case "13":
+                return true;
+            case "22":
+                return prefs.isProtectionEnabled()
+                        && prefs.getBonusSeconds() < Prefs.MAX_BONUS_MINUTES * 60L;
+            case "33":
+            case "44":
+                return prefs.isProtectionEnabled();
+            case "99":
+                return !prefs.isProtectionEnabled();
+            default:
+                return false;
+        }
+    }
+
+    private boolean canExecuteAction(String code) {
+        Button button = actionButtons.get(code);
+        return button != null && button.isShown() && button.isEnabled() && isActionAvailable(code);
     }
 
     private boolean requireParent() {
@@ -158,7 +245,7 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        if (PinDialog.isVolumeKey(event.getKeyCode())) {
+        if (PinDialog.isVolumeKey(event.getKeyCode()) || event.getKeyCode() == KeyEvent.KEYCODE_POWER) {
             return super.dispatchKeyEvent(event);
         }
         if (event.getAction() != KeyEvent.ACTION_DOWN || event.getRepeatCount() > 0) {
@@ -166,6 +253,11 @@ public class MainActivity extends Activity {
         }
         if (!requireParent()) {
             return true;
+        }
+        if (RemoteKeypad.isNavigationKey(event.getKeyCode())
+                || RemoteKeypad.isSelectKey(event.getKeyCode())) {
+            shortcut.setLength(0);
+            return super.dispatchKeyEvent(event);
         }
         int digit = PinDialog.digitOf(event.getKeyCode());
         if (digit < 0) {
@@ -177,34 +269,33 @@ public class MainActivity extends Activity {
         }
         String code = shortcut.toString();
         shortcut.setLength(0);
+        executeAction(code);
+        return true;
+    }
+
+    /** Both numeric shortcuts and focused buttons cross the same authorization boundary. */
+    private void executeAction(String code) {
+        shortcut.setLength(0);
+        if (!requireParent() || !canExecuteAction(code)) {
+            return;
+        }
         switch (code) {
             case "00": closePanel(); break;
             case "11": verifyAgain(this::promptNewPassword); break;
             case "12": promptDailyLimit(); break;
             case "13": checkUpdate(); break;
-            case "22":
-                if (prefs.isProtectionEnabled() && prefs.getBonusSeconds() < Prefs.MAX_BONUS_MINUTES * 60L) {
-                    addBonus();
-                }
-                break;
-            case "33":
-                if (prefs.isProtectionEnabled()) {
-                    lockNow();
-                }
-                break;
+            case "22": addBonus(); break;
+            case "33": lockNow(); break;
             case "44":
-                if (prefs.isProtectionEnabled()) {
-                    verifyAgain(this::confirmRemoval);
-                }
+                verifyAgain(() -> {
+                    if (canExecuteAction("44")) {
+                        confirmRemoval();
+                    }
+                });
                 break;
-            case "99":
-                if (!prefs.isProtectionEnabled()) {
-                    resumeProtection();
-                }
-                break;
+            case "99": resumeProtection(); break;
             default: break;
         }
-        return true;
     }
 
     private void verifyAgain(Runnable success) {
@@ -364,6 +455,9 @@ public class MainActivity extends Activity {
             return;
         }
         showPin("增加时长", "输入 1-" + left + " 分钟，按 OK 确认", 2, false, value -> {
+            if (!canExecuteAction("22")) {
+                return;
+            }
             int minutes = Integer.parseInt(value);
             GuardService service = GuardService.get();
             if (minutes < 1 || minutes > left) {
@@ -392,7 +486,7 @@ public class MainActivity extends Activity {
 
     private void confirmRemoval() {
         showPin("关闭防护", "将停止管控，不会清除数据。\n输入 99 确认。", 2, value -> {
-            if (!"99".equals(value) || !AdminSession.beginRemoval()) {
+            if (!canExecuteAction("44") || !"99".equals(value) || !AdminSession.beginRemoval()) {
                 return;
             }
             LockActivity.dismissForMaintenance();
@@ -465,16 +559,19 @@ public class MainActivity extends Activity {
             updateText += "\n" + installation;
         }
         ((TextView) findViewById(R.id.update_text)).setText(updateText);
-        String menu = "00 关闭　11 改密码　12 每日时长\n13 检查更新";
-        if (prefs.isProtectionEnabled()) {
-            if (prefs.getBonusSeconds() < Prefs.MAX_BONUS_MINUTES * 60L) {
-                menu += "\n22 加时长";
+        View focused = findViewById(R.id.menu_actions).findFocus();
+        boolean focusedActionHidden = false;
+        for (Map.Entry<String, Button> action : actionButtons.entrySet()) {
+            Button button = action.getValue();
+            int visibility = isActionAvailable(action.getKey()) ? View.VISIBLE : View.GONE;
+            if (button.getVisibility() != visibility) {
+                focusedActionHidden |= button == focused && visibility == View.GONE;
+                button.setVisibility(visibility);
             }
-            menu += "\n33 立即锁定　44 关闭防护";
-        } else {
-            menu += "\n99 启用防护";
         }
-        ((TextView) findViewById(R.id.menu_text)).setText(menu);
+        if (focusedActionHidden) {
+            actionButtons.get("12").requestFocus();
+        }
         StringBuilder warning = new StringBuilder();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
             warning.append("缺少悬浮窗权限\n");

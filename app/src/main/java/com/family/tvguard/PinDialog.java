@@ -8,23 +8,16 @@ import android.os.Bundle;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
-import android.view.View;
 import android.view.Window;
+import android.view.WindowManager;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
-/**
- * Password entry dialog driven by the remote-control number keys.
- *
- * <p>The TV's on-screen keyboard swallows DPAD/OK, so a normal {@code EditText} inside an
- * {@code AlertDialog} cannot be operated with the remote: the user cannot reach the buttons.
- * This dialog never shows an IME. It reads the raw key events itself, exactly like the lock
- * screen, so digits, OK and the arrow buttons all work with a physical remote.
- */
+/** IME-free PIN or numeric entry, operable with either number keys or a DPAD-only remote. */
 final class PinDialog extends Dialog {
 
     interface Listener {
-        /** Called with the entered digits when the user confirms. */
         void onConfirm(String value);
     }
 
@@ -33,9 +26,12 @@ final class PinDialog extends Dialog {
     private final int maxLength;
     private final boolean password;
     private final Listener listener;
-
     private final StringBuilder input = new StringBuilder();
     private TextView inputView;
+    private boolean navigationMode = true;
+    private boolean submitted;
+    private int selectKey = KeyEvent.KEYCODE_UNKNOWN;
+    private boolean selectNavigates;
 
     PinDialog(Context ctx, String title, String message, Listener listener) {
         this(ctx, title, message, Prefs.PASSWORD_LENGTH, listener);
@@ -60,10 +56,9 @@ final class PinDialog extends Dialog {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
-
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
         float density = getContext().getResources().getDisplayMetrics().density;
-        int pad = Math.round(density * 36);
-
+        int pad = Math.round(density * 20);
         LinearLayout box = new LinearLayout(getContext());
         box.setOrientation(LinearLayout.VERTICAL);
         box.setBackgroundColor(Color.parseColor("#12171D"));
@@ -72,61 +67,96 @@ final class PinDialog extends Dialog {
         TextView titleView = new TextView(getContext());
         titleView.setText(title);
         titleView.setTextColor(Color.WHITE);
-        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 30);
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 26);
         titleView.setTypeface(Typeface.DEFAULT_BOLD);
         box.addView(titleView);
 
         TextView messageView = new TextView(getContext());
         messageView.setText(message);
         messageView.setTextColor(Color.parseColor("#B9C4CF"));
-        messageView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
-        messageView.setPadding(0, Math.round(density * 18), 0, 0);
+        messageView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        messageView.setPadding(0, Math.round(density * 12), 0, 0);
         box.addView(messageView);
 
         inputView = new TextView(getContext());
         inputView.setTextColor(Color.parseColor("#4FC3F7"));
-        inputView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 44);
+        inputView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 36);
         inputView.setTypeface(Typeface.DEFAULT_BOLD);
         inputView.setLetterSpacing(0.3f);
         inputView.setGravity(Gravity.CENTER);
-        inputView.setMinHeight(Math.round(density * 70));
-        inputView.setPadding(0, Math.round(density * 18), 0, Math.round(density * 18));
+        inputView.setMinHeight(Math.round(density * 60));
         box.addView(inputView);
+        RemoteKeypad keypad = new RemoteKeypad(getContext(), new RemoteKeypad.Listener() {
+            @Override
+            public void onDigit(int digit) {
+                appendDigit(digit);
+            }
 
-        setContentView(box);
+            @Override
+            public void onDelete() {
+                deleteDigit();
+            }
+
+            @Override
+            public void onConfirm() {
+                submit();
+            }
+        });
+        box.addView(keypad, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        ScrollView scroll = new ScrollView(getContext());
+        scroll.setFillViewport(true);
+        scroll.addView(box);
+        setContentView(scroll);
         setCanceledOnTouchOutside(false);
         refresh();
     }
 
     @Override
+    protected void onStart() {
+        super.onStart();
+        float density = getContext().getResources().getDisplayMetrics().density;
+        int width = getContext().getResources().getDisplayMetrics().widthPixels;
+        getWindow().setLayout(Math.min(Math.round(density * 560),
+                Math.max(1, width - Math.round(density * 24))), WindowManager.LayoutParams.WRAP_CONTENT);
+    }
+
+    @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        int action = event.getAction();
-        if (isVolumeKey(event.getKeyCode())) {
+        int code = event.getKeyCode();
+        if (isVolumeKey(code) || code == KeyEvent.KEYCODE_POWER) {
             return super.dispatchKeyEvent(event);
         }
+        int action = event.getAction();
         if (action != KeyEvent.ACTION_DOWN && action != KeyEvent.ACTION_UP) {
             return true;
         }
-        if (action == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
-            int code = event.getKeyCode();
-            int digit = digitOf(code);
-            if (digit >= 0) {
-                if (input.length() < maxLength) {
-                    input.append((char) ('0' + digit));
-                }
-                refresh();
-                if (password && input.length() == maxLength) {
+        if (RemoteKeypad.isNavigationKey(code)) {
+            navigationMode = true;
+            return super.dispatchKeyEvent(event);
+        }
+        if (RemoteKeypad.isSelectKey(code)) {
+            if (action == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                selectKey = code;
+                selectNavigates = navigationMode;
+                if (!selectNavigates) {
                     submit();
                 }
+            }
+            boolean dispatch = selectKey == code && selectNavigates;
+            if (action == KeyEvent.ACTION_UP) {
+                selectKey = KeyEvent.KEYCODE_UNKNOWN;
+            }
+            return dispatch ? super.dispatchKeyEvent(event) : true;
+        }
+        if (action == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+            int digit = digitOf(code);
+            if (digit >= 0) {
+                navigationMode = false;
+                appendDigit(digit);
             } else if (code == KeyEvent.KEYCODE_DEL) {
-                if (input.length() > 0) {
-                    input.setLength(input.length() - 1);
-                }
-                refresh();
-            } else if (code == KeyEvent.KEYCODE_ENTER
-                    || code == KeyEvent.KEYCODE_DPAD_CENTER
-                    || code == KeyEvent.KEYCODE_NUMPAD_ENTER) {
-                submit();
+                navigationMode = false;
+                deleteDigit();
             } else if (code == KeyEvent.KEYCODE_BACK) {
                 dismiss();
             }
@@ -134,10 +164,31 @@ final class PinDialog extends Dialog {
         return true;
     }
 
-    private void submit() {
-        if (input.length() == 0) {
+    private void appendDigit(int digit) {
+        if (submitted) {
             return;
         }
+        if (input.length() < maxLength) {
+            input.append((char) ('0' + digit));
+        }
+        refresh();
+        if (password && input.length() == maxLength) {
+            submit();
+        }
+    }
+
+    private void deleteDigit() {
+        if (input.length() > 0) {
+            input.setLength(input.length() - 1);
+        }
+        refresh();
+    }
+
+    private void submit() {
+        if (input.length() == 0 || submitted) {
+            return;
+        }
+        submitted = true;
         String value = input.toString();
         dismiss();
         listener.onConfirm(value);
@@ -165,11 +216,6 @@ final class PinDialog extends Dialog {
         return -1;
     }
 
-    /**
-     * Volume buttons are never the guard's business: swallowing them would take the television's
-     * audio away from whoever is in the room. Every screen that reads raw remote keys hands these
-     * back to the system, which owns the volume stream.
-     */
     static boolean isVolumeKey(int code) {
         return code == KeyEvent.KEYCODE_VOLUME_UP
                 || code == KeyEvent.KEYCODE_VOLUME_DOWN

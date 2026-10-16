@@ -358,6 +358,12 @@ public class GuardService extends Service {
         }
     }
 
+    void deleteLockDigit() {
+        if (locked && inputBuffer.length() > 0) {
+            inputBuffer.setLength(inputBuffer.length() - 1);
+        }
+    }
+
     boolean isPasswordComplete() {
         return inputBuffer.length() >= Prefs.PASSWORD_LENGTH;
     }

@@ -2,73 +2,105 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@android:color/transparent">
+    android:background="@android:color/transparent"
+    android:padding="24dp">
 
     <ScrollView
-        android:layout_width="620dp"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center"
-        android:layout_marginTop="20dp"
-        android:layout_marginBottom="20dp">
-
-    <LinearLayout
+        android:id="@+id/main_scroll"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@drawable/panel_bg"
-        android:orientation="vertical"
-        android:padding="32dp">
+        android:layout_gravity="center"
+        android:clipToPadding="false"
+        android:descendantFocusability="afterDescendants"
+        android:fillViewport="false"
+        android:focusable="false">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="电视时长管控"
-            android:textColor="#FFFFFF"
-            android:textSize="28sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/status_text"
+        <LinearLayout
+            android:id="@+id/main_panel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:lineSpacingExtra="4dp"
-            android:textColor="#B9C4CF"
-            android:textSize="18sp" />
+            android:background="@drawable/panel_bg"
+            android:orientation="vertical"
+            android:padding="24dp">
 
-        <TextView
-            android:id="@+id/update_text"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:textColor="#B9C4CF"
-            android:textSize="17sp" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="电视时长管控"
+                android:textColor="#FFFFFF"
+                android:textSize="28sp"
+                android:textStyle="bold" />
 
-        <TextView
-            android:id="@+id/warn_text"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:lineSpacingExtra="4dp"
-            android:textColor="#EF5350"
-            android:textSize="18sp"
-            android:visibility="gone" />
+            <LinearLayout
+                android:id="@+id/panel_columns"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:baselineAligned="false"
+                android:orientation="vertical">
 
-        <TextView
-            android:id="@+id/menu_text"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="22dp"
-            android:lineSpacingExtra="6dp"
-            android:textColor="#7E8B99"
-            android:textSize="17sp" />
+                <LinearLayout
+                    android:id="@+id/status_column"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
 
-        <TextView
-            android:id="@+id/version_text"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:textColor="#5C6773"
-            android:textSize="15sp" />
-    </LinearLayout>
+                    <TextView
+                        android:id="@+id/status_text"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:lineSpacingExtra="4dp"
+                        android:textColor="#B9C4CF"
+                        android:textSize="18sp" />
+
+                    <TextView
+                        android:id="@+id/update_text"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:textColor="#B9C4CF"
+                        android:textSize="17sp" />
+
+                    <TextView
+                        android:id="@+id/warn_text"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:lineSpacingExtra="4dp"
+                        android:textColor="#EF5350"
+                        android:textSize="18sp"
+                        android:visibility="gone" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/menu_column"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="方向键选择 · OK 确认\n也可直接输入两位数字"
+                        android:textColor="#B9C4CF"
+                        android:textSize="16sp" />
+
+                    <LinearLayout
+                        android:id="@+id/menu_actions"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:descendantFocusability="afterDescendants"
+                        android:orientation="vertical" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/version_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:textColor="#8794A3"
+                android:textSize="15sp" />
+        </LinearLayout>
     </ScrollView>
 </FrameLayout>

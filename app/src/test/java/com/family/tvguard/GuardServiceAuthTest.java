@@ -358,6 +358,7 @@ public class GuardServiceAuthTest {
         taskManager.setLockTaskModeState(ActivityManager.LOCK_TASK_MODE_LOCKED);
 
         assertTrue(lock.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, keyCode)));
+        assertTrue(lock.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, keyCode)));
 
         assertEquals(0, activityShadow().stopCalls);
         assertEquals(ActivityManager.LOCK_TASK_MODE_LOCKED, activityManager.getLockTaskModeState());
@@ -374,7 +375,7 @@ public class GuardServiceAuthTest {
     }
 
     private LockActivity startLock() {
-        lockController = Robolectric.buildActivity(LockActivity.class).create().start().resume();
+        lockController = Robolectric.buildActivity(LockActivity.class).create().start().resume().visible();
         return lockController.get();
     }
 

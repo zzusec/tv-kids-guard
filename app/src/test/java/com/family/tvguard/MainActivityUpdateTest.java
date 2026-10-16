@@ -5,7 +5,9 @@ import android.app.job.JobInfo;
 import android.app.job.JobScheduler;
 import android.content.Context;
 import android.content.Intent;
-import android.widget.TextView;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.Button;
 
 import org.junit.After;
 import org.junit.Before;
@@ -20,6 +22,7 @@ import org.robolectric.annotation.LooperMode;
 import org.robolectric.shadows.ShadowDialog;
 import org.robolectric.shadows.ShadowLooper;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -114,10 +117,20 @@ public class MainActivityUpdateTest {
     @Test
     public void parentPanelOffersOneUpdateEntryWithoutRestoringUnsupportedSettings() {
         MainActivity activity = startPanel();
-        String menu = ((TextView) activity.findViewById(R.id.menu_text)).getText().toString();
-        assertTrue(menu.contains("13 检查更新"));
+        ViewGroup menu = activity.findViewById(R.id.menu_actions);
+        int updateEntries = 0;
+        for (int i = 0; i < menu.getChildCount(); i++) {
+            View action = menu.getChildAt(i);
+            assertTrue(action instanceof Button);
+            if (action.isShown() && "action_13".equals(action.getTag())) {
+                updateEntries++;
+                assertTrue(action.isFocusable());
+                assertEquals("13 检查更新", ((Button) action).getText().toString());
+            }
+        }
+        assertEquals(1, updateEntries);
         for (String code : new String[]{"55", "66", "77", "88"}) {
-            assertFalse(menu.contains(code));
+            assertTrue(menu.findViewWithTag("action_" + code) == null);
         }
         assertNotNull(activity.findViewById(R.id.update_text));
     }

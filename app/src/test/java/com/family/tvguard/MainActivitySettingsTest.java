@@ -6,6 +6,7 @@ import android.content.Context;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.TextView;
 
 import org.junit.After;
@@ -77,6 +78,7 @@ public class MainActivitySettingsTest {
         assertRemovedMenuItems(menu);
 
         assertShortcutIgnored("99");
+        assertHiddenButtonIgnored("99");
     }
 
     @Test
@@ -95,7 +97,32 @@ public class MainActivitySettingsTest {
         for (String code : new String[] {"22", "33", "44", "55", "66", "77", "88"}) {
             assertShortcutIgnored(code);
         }
+        for (String code : new String[] {"22", "33", "44"}) {
+            assertHiddenButtonIgnored(code);
+        }
         assertFalse(prefs.isProtectionEnabled());
+    }
+
+    @Test
+    public void cappedBonusIsUnavailableThroughShortcutAndButton() {
+        prefs.setBonusSeconds(Prefs.MAX_BONUS_MINUTES * 60L);
+        startPanel(true);
+
+        assertFalse(menuText().contains("22"));
+        assertShortcutIgnored("22");
+        assertHiddenButtonIgnored("22");
+    }
+
+    @Test
+    public void disabledButtonAlsoDisablesItsNumericShortcut() {
+        MainActivity activity = startPanel(false);
+        Button button = activity.findViewById(android.R.id.content).findViewWithTag("action_12");
+        button.setEnabled(false);
+
+        assertShortcutIgnored("12");
+        button.performClick();
+        assertNull(ShadowDialog.getLatestDialog());
+        assertEquals(Prefs.DEFAULT_LIMIT_MINUTES, prefs.getDailyLimitMinutes());
     }
 
     @Test
@@ -180,15 +207,47 @@ public class MainActivitySettingsTest {
     }
 
     private String menuText() {
-        TextView menu = controller.get().findViewById(R.id.menu_text);
+        ViewGroup menu = controller.get().findViewById(R.id.menu_actions);
         assertNotNull(menu);
-        return menu.getText().toString();
+        StringBuilder text = new StringBuilder();
+        for (int i = 0; i < menu.getChildCount(); i++) {
+            View view = menu.getChildAt(i);
+            assertTrue("Actions must be actual focusable buttons", view instanceof Button);
+            Button button = (Button) view;
+            if (button.isShown()) {
+                assertTrue(button.isFocusable());
+                assertTrue(button.isEnabled());
+                text.append(button.getText()).append('\n');
+            }
+        }
+        return text.toString();
     }
 
     private void assertRemovedMenuItems(String menu) {
         for (String code : new String[] {"55", "66", "77", "88"}) {
             assertFalse("Removed shortcut must not appear: " + code, menu.contains(code));
+            assertNull(controller.get().findViewById(android.R.id.content)
+                    .findViewWithTag("action_" + code));
         }
+    }
+
+    private void assertHiddenButtonIgnored(String code) {
+        Button button = controller.get().findViewById(android.R.id.content)
+                .findViewWithTag("action_" + code);
+        assertNotNull(button);
+        assertFalse(button.isShown());
+        Map<String, ?> before = context.getSharedPreferences("tvguard_prefs", Context.MODE_PRIVATE)
+                .getAll();
+
+        button.performClick();
+
+        assertEquals(before, context.getSharedPreferences("tvguard_prefs", Context.MODE_PRIVATE).getAll());
+        assertNull(ShadowDialog.getLatestDialog());
+        assertNull(shadowOf(controller.get()).getNextStartedActivity());
+        assertNull(shadowOf(context).getNextStartedService());
+        assertTrue(AdminSession.isActive());
+        assertFalse(AdminSession.isMaintenanceActive());
+        assertFalse(AdminSession.isRemovalInProgress());
     }
 
     private void assertShortcutIgnored(String code) {
