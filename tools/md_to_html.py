@@ -49,6 +49,7 @@ def inline(text):
     text = html.escape(text, quote=False)
     text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
     text = re.sub(r"`(.+?)`", r"<code>\1</code>", text)
+    text = re.sub(r'\[([^\]]+)\]\((https://[^\s)"<>]+)\)', r'<a href="\2">\1</a>', text)
     return text
 
 
