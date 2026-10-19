@@ -104,10 +104,9 @@ public class AdminAuthActivity extends Activity {
         visible = false;
         handler.removeCallbacks(ticker);
         GuardService service = GuardService.get();
-        // The lease follows the visible parent UI. The panel (or the OTA install confirmation
-        // opened from it) re-asserts it, so holding it here would leave the shield suspended
-        // over the home screen after a system dialog.
-        if (service != null) {
+        if (service != null && !openingConsole) {
+            // When handing over to the panel, keep the lease so the shield cannot flash back
+            // between the two parent screens; the panel takes the lease over on its next resume.
             service.setParentUiVisible(false);
         }
         if (!openingConsole) {
@@ -237,6 +236,13 @@ public class AdminAuthActivity extends Activity {
 
     private void openConsole() {
         openingConsole = true;
+        // Keep the parent lease alive across the handover: the gate finishes immediately, and
+        // without the lease the guard sees "no parent UI" for a moment and pulls the quota lock
+        // back over the freshly opened panel (the "asked for the password twice" bug).
+        GuardService service = GuardService.get();
+        if (service != null) {
+            service.setParentUiVisible(true);
+        }
         startActivity(new Intent(this, MainActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP));
         finish();

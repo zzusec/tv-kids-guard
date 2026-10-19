@@ -310,6 +310,12 @@ public class GuardService extends Service {
         if (lockActivityVisible || isParentUiVisible() || AdminSession.isMaintenanceActive()) {
             return;
         }
+
+        // An authenticated panel that is on screen is parent UI even before its next resume
+        // re-asserts the lease; pulling the lock over it would ask for the password again.
+        if (MainActivity.isAuthorizedVisible()) {
+            return;
+        }
         if (now - lastLockFocusElapsed < 800L) {
             return;
         }
