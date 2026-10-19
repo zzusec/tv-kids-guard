@@ -8,6 +8,7 @@ import android.content.Intent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.LinearLayout;
 
 import org.junit.After;
 import org.junit.Before;
@@ -119,8 +120,19 @@ public class MainActivityUpdateTest {
         MainActivity activity = startPanel();
         ViewGroup menu = activity.findViewById(R.id.menu_actions);
         int updateEntries = 0;
+        java.util.List<View> views = new java.util.ArrayList<>();
         for (int i = 0; i < menu.getChildCount(); i++) {
-            View action = menu.getChildAt(i);
+            View child = menu.getChildAt(i);
+            if (child instanceof LinearLayout && child.getTag() == null
+                    && ((LinearLayout) child).getChildCount() == 2) {
+                LinearLayout row = (LinearLayout) child;
+                views.add(row.getChildAt(0));
+                views.add(row.getChildAt(1));
+            } else {
+                views.add(child);
+            }
+        }
+        for (View action : views) {
             if (!(action instanceof Button)) {
                 continue;
             }

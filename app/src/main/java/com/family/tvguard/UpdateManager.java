@@ -142,8 +142,9 @@ public final class UpdateManager {
                 JobScheduler scheduler = scheduler(app);
                 if (active != null && !active.cancelled) return;
                 if (pending(scheduler, NOW_JOB_ID) != null) {
-                    waitingForNetwork(app);
-                    return;
+                    // The parent asked again: drop the backed-off job so this press is not
+                    // silently swallowed by a pending exponential backoff.
+                    scheduler.cancel(NOW_JOB_ID);
                 }
                 JobInfo job = new JobInfo.Builder(NOW_JOB_ID,
                         new ComponentName(app, UpdateJobService.class))
@@ -778,7 +779,12 @@ public final class UpdateManager {
     private static void state(Context context, String status, String message, int version, String name) throws IOException {
         SharedPreferences.Editor editor = prefs(context).edit();
         putState(editor, status, message, version, name);
-        commit(editor);
+        try {
+            commit(editor);
+        } catch (IOException e) {
+            // Progress display only: the check itself must still run and report its real result.
+            Log.w("TVGuardUpdate", "状态未能保存：" + e.getMessage());
+        }
     }
 
     private static void putState(SharedPreferences.Editor editor, String status, String message, int version, String name) {
@@ -787,6 +793,14 @@ public final class UpdateManager {
     }
 
     private static void commit(SharedPreferences.Editor editor) throws IOException {
+        if (editor.commit()) return;
+        // Old televisions occasionally fail a flash write under memory pressure. One retry is
+        // enough for the cosmetic status; the APK payload has its own durable writes.
+        try {
+            Thread.sleep(200L);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
         if (!editor.commit()) throw new IOException("无法持久保存更新状态");
     }
 

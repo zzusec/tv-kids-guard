@@ -18,7 +18,9 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -126,30 +128,102 @@ public class MainActivity extends Activity {
                 {"00", "关闭面板"}, {"11", "改密码"}, {"12", "每日时长"}, {"13", "检查更新"},
                 {"22", "加时长"}, {"33", "立即锁定"}, {"44", "关闭防护"}, {"99", "启用防护"}
         };
-        for (String[] action : actions) {
-            String code = action[0];
-            Button button = new Button(this);
-            button.setId(View.generateViewId());
-            button.setTag("action_" + code);
-            button.setText(code + " " + action[1]);
-            RemoteKeypad.styleButton(button);
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            params.topMargin = Math.round(8 * getResources().getDisplayMetrics().density);
-            menu.addView(button, params);
-            button.setOnClickListener(view -> executeAction(code));
-            actionButtons.put(code, button);
-            // The keypad-only rows sit after the whole shortcut list so DPAD order across the
-            // eight actions stays exactly as before.
-            if ("12".equals(code) || "22".equals(code)) {
-                adjustRows.put(code, buildAdjustRow(code.equals("12") ? "limit" : "bonus",
-                        code.equals("12") ? "微调：每日时长" : "微调：加时长", code,
-                        code.equals("12") ? () -> adjustDailyLimit(-1) : () -> adjustBonus(-1),
-                        code.equals("12") ? () -> adjustDailyLimit(1) : this::grantOneBonusMinute));
+        // Two columns keep all eight shortcuts on one television screen; the keypad-only rows
+        // close the grid underneath.
+        for (int index = 0; index < actions.length; index += 2) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setBaselineAligned(false);
+            row.setLayoutParams(new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            for (int column = 0; column < 2 && index + column < actions.length; column++) {
+                String[] action = actions[index + column];
+                Button button = actionButton(action[0], action[1]);
+                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+                int gap = Math.round(5 * getResources().getDisplayMetrics().density);
+                params.setMarginStart(column == 0 ? 0 : gap);
+                params.topMargin = gap;
+                row.addView(button, params);
+            }
+            menu.addView(row);
+        }
+        menu.addView(buildAdjustRow("limit", "微调：每日时长", "12",
+                () -> adjustDailyLimit(-1), () -> adjustDailyLimit(1)), rowParams());
+        menu.addView(buildAdjustRow("bonus", "微调：加时长", "22",
+                () -> adjustBonus(-1), this::grantOneBonusMinute), rowParams());
+    }
+
+    private Button actionButton(String code, String label) {
+        Button button = new Button(this);
+        button.setId(View.generateViewId());
+        button.setTag("action_" + code);
+        button.setText(code + " " + label);
+        RemoteKeypad.styleButton(button);
+        button.setOnClickListener(view -> executeAction(code));
+        actionButtons.put(code, button);
+        return button;
+    }
+
+    /** Shortcut order in the two-column grid; hidden actions are skipped, never landed on. */
+    private static final String[][] GRID = {
+            {"00", "11"}, {"12", "13"}, {"22", "33"}, {"44", "99"}
+    };
+
+    /**
+     * Explicit DPAD navigation. Shortcuts are visited in row-first order (hidden actions are
+     * skipped); below them the two inline adjust rows keep their ±1 minute pills reachable, and
+     * UP returns to the grid. Both DOWN and UP are consumed so the platform never runs a second,
+     * geometry-based focus search.
+     */
+    private boolean navigateFocus(int keyCode) {
+        List<View> grid = new ArrayList<>();
+        for (String[] row : GRID) {
+            for (String code : row) {
+                Button button = actionButtons.get(code);
+                if (button != null && button.isShown()) {
+                    grid.add(button);
+                }
             }
         }
-        menu.addView(adjustRows.get("12"), rowParams());
-        menu.addView(adjustRows.get("22"), rowParams());
+        List<View> pills = new ArrayList<>();
+        for (View row : adjustRows.values()) {
+            if (row instanceof LinearLayout) {
+                LinearLayout line = (LinearLayout) row;
+                for (int i = 0; i < line.getChildCount(); i++) {
+                    View child = line.getChildAt(i);
+                    if (child instanceof Button && child.isShown()) {
+                        pills.add(child);
+                    }
+                }
+            }
+        }
+        View focused = getWindow() == null ? null : getWindow().getDecorView().findFocus();
+        int index = grid.indexOf(focused);
+        boolean forward = keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+                || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT;
+        if (index >= 0) {
+            if (!forward && index == 0 && !pills.isEmpty()) {
+                return pills.get(pills.size() - 1).requestFocus();
+            }
+            int step = forward ? 1 : -1;
+            if (forward && index == grid.size() - 1 && !pills.isEmpty()) {
+                return pills.get(0).requestFocus();
+            }
+            View target = grid.get(((index + step) % grid.size() + grid.size()) % grid.size());
+            return target.requestFocus();
+        }
+        int pill = pills.indexOf(focused);
+        if (pill < 0) {
+            return grid.isEmpty() || !grid.get(0).requestFocus();
+        }
+        if (!forward) {
+            // UP leaves the adjust rows and returns to the last visible shortcut.
+            return grid.isEmpty() || !grid.get(grid.size() - 1).requestFocus();
+        }
+        int step = keyCode == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : 2;
+        View target = pills.get((pill + step) % pills.size());
+        return target.requestFocus();
     }
 
     private LinearLayout.LayoutParams rowParams() {
@@ -199,6 +273,14 @@ public class MainActivity extends Activity {
             default:
                 return false;
         }
+    }
+
+    private static boolean isPanelControl(View view) {
+        if (view == null || view.getTag() == null) {
+            return false;
+        }
+        String tag = view.getTag().toString();
+        return tag.startsWith("action_") || tag.endsWith("_minus") || tag.endsWith("_plus");
     }
 
     private boolean canExecuteAction(String code) {
@@ -291,14 +373,29 @@ public class MainActivity extends Activity {
         if (PinDialog.isVolumeKey(event.getKeyCode()) || event.getKeyCode() == KeyEvent.KEYCODE_POWER) {
             return super.dispatchKeyEvent(event);
         }
+        // Panel navigation is consumed for both DOWN and UP, before any action filtering: if the
+        // UP reached the platform it would run a second geometry-based focus search and move the
+        // ring somewhere else.
+        View navFocus = getWindow() == null ? null : getWindow().getDecorView().findFocus();
+        if (RemoteKeypad.isNavigationKey(event.getKeyCode()) && isPanelControl(navFocus)) {
+            shortcut.setLength(0);
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0
+                    && requireParent()) {
+                navigateFocus(event.getKeyCode());
+            }
+            return true;
+        }
         if (event.getAction() != KeyEvent.ACTION_DOWN || event.getRepeatCount() > 0) {
             return super.dispatchKeyEvent(event);
         }
         if (!requireParent()) {
             return true;
         }
-        if (RemoteKeypad.isNavigationKey(event.getKeyCode())
-                || RemoteKeypad.isSelectKey(event.getKeyCode())) {
+        if (RemoteKeypad.isNavigationKey(event.getKeyCode())) {
+            shortcut.setLength(0);
+            return super.dispatchKeyEvent(event);
+        }
+        if (RemoteKeypad.isSelectKey(event.getKeyCode())) {
             shortcut.setLength(0);
             return super.dispatchKeyEvent(event);
         }

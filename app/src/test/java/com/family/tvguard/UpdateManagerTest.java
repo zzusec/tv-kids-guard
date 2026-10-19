@@ -120,7 +120,9 @@ public class UpdateManagerTest {
         UpdateManager.schedule(context);
         UpdateManager.checkNow(context);
         assertSame(periodic, pending(UpdateManager.PERIODIC_JOB_ID));
-        assertSame(immediate, pending(UpdateManager.NOW_JOB_ID));
+        // An explicit "check now" replaces the pending job so a backed-off one cannot swallow
+        // the parent's request; the periodic clock is untouched.
+        assertNotNull(pending(UpdateManager.NOW_JOB_ID));
         assertEquals(2, scheduler.getAllPendingJobs().size());
         assertTrue(requests.isEmpty());
         scheduler.cancel(UpdateManager.NOW_JOB_ID);

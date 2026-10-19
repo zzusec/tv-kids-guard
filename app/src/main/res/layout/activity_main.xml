@@ -101,6 +101,7 @@
                         android:id="@+id/menu_actions"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:baselineAligned="false"
                         android:descendantFocusability="afterDescendants"
                         android:orientation="vertical" />
                 </LinearLayout>

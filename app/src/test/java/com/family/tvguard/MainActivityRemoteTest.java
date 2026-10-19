@@ -79,10 +79,15 @@ public class MainActivityRemoteTest {
     @Test
     public void actualDpadMovesFocusAndOkActivatesOnlyOnRelease() {
         startPanel(false);
+        // Visible order with protection on: 00 11 12 13 22 33 44 99.
         assertFocused("12");
         press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_UP);
         assertFocused("11");
         press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_DOWN);
+        assertFocused("12");
+        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_RIGHT);
+        assertFocused("13");
+        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_LEFT);
         assertFocused("12");
 
         send(activity.getWindow(), KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_CENTER);
@@ -128,21 +133,19 @@ public class MainActivityRemoteTest {
     @Test
     public void statusRefreshKeepsTheSameButtonsAndSelectedAction() {
         startPanel(true);
-        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_DOWN);
+        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_RIGHT);
         assertFocused("13");
         ViewGroup menu = activity.findViewById(R.id.menu_actions);
-        View[] original = new View[menu.getChildCount()];
-        for (int i = 0; i < original.length; i++) {
-            original[i] = menu.getChildAt(i);
-        }
+        View[] original = menuChildren(menu);
         prefs.setUsedSeconds(123L);
 
         ShadowLooper.idleMainLooper(2, TimeUnit.SECONDS);
 
         assertFocused("13");
-        assertEquals(original.length, menu.getChildCount());
+        View[] refreshed = menuChildren(menu);
+        assertEquals(original.length, refreshed.length);
         for (int i = 0; i < original.length; i++) {
-            assertSame(original[i], menu.getChildAt(i));
+            assertSame(original[i], refreshed[i]);
         }
         assertTrue(((TextView) activity.findViewById(R.id.status_text)).getText().toString()
                 .contains("今日已用：2 分 3 秒"));
@@ -151,8 +154,9 @@ public class MainActivityRemoteTest {
     @Test
     public void dpadSkipsHiddenActionsAndRecoversFocusOnlyWhenCurrentActionIsHidden() {
         startPanel(true);
-        for (String code : new String[] {"13", "22", "33", "44"}) {
-            press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_DOWN);
+        // Grid order: 00 11 / 12 13 / 22 33 / 44 99.
+        for (String code : new String[] {"22", "33", "44"}) {
+            focusAction(code);
             assertFocused(code);
         }
         Button original = action("44");
@@ -163,6 +167,7 @@ public class MainActivityRemoteTest {
         assertSame(original, action("44"));
         assertFalse(original.isShown());
         assertFocused("12");
+        // 22 is hidden now; focus skips it and lands on 13, then on 99.
         press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_DOWN);
         assertFocused("13");
         press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_DOWN);
@@ -209,7 +214,7 @@ public class MainActivityRemoteTest {
     public void dpadNavigationClearsAnAbandonedNumericShortcut() {
         startPanel(false);
         press(activity.getWindow(), KeyEvent.KEYCODE_1);
-        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_DOWN);
+        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_RIGHT);
         assertFocused("13");
         press(activity.getWindow(), KeyEvent.KEYCODE_2);
 
@@ -272,8 +277,10 @@ public class MainActivityRemoteTest {
         LinearLayout columns = activity.findViewById(R.id.panel_columns);
         assertEquals(twoColumns ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL,
                 columns.getOrientation());
-        for (String code : new String[] {"13", "22", "33", "44"}) {
-            press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_DOWN);
+        // Grid order: 00 11 / 12 13 / 22 33 / 44 99. Down column 0, step right for 33, then
+        // 44 is reached by wrapping down (its own UP points back to 33).
+        for (String code : new String[] {"22", "33", "44"}) {
+            focusAction(code);
             assertFocused(code);
         }
         ShadowLooper.idleMainLooper(500, TimeUnit.MILLISECONDS);
@@ -299,15 +306,49 @@ public class MainActivityRemoteTest {
     }
 
     private Button action(String code) {
-        Button button = activity.findViewById(R.id.menu_actions).findViewWithTag("action_" + code);
+        ViewGroup menu = activity.findViewById(R.id.menu_actions);
+        Button button = menu.findViewWithTag("action_" + code);
         assertNotNull(button);
         return button;
     }
 
+    /** Grid rows plus the two inline adjust rows, in display order. */
+    private View[] menuChildren(ViewGroup menu) {
+        java.util.List<View> views = new java.util.ArrayList<>();
+        for (int i = 0; i < menu.getChildCount(); i++) {
+            View child = menu.getChildAt(i);
+            if (child instanceof LinearLayout && child.getTag() == null) {
+                ViewGroup row = (ViewGroup) child;
+                for (int j = 0; j < row.getChildCount(); j++) {
+                    views.add(row.getChildAt(j));
+                }
+            } else {
+                views.add(child);
+            }
+        }
+        return views.toArray(new View[0]);
+    }
+
     private void assertFocused(String code) {
-        assertSame("DPAD must move the actual focus to action " + code,
-                action(code), activity.getWindow().getDecorView().findFocus());
+        View focused = activity.getWindow().getDecorView().findFocus();
+        assertSame("DPAD must move the actual focus to action " + code + " (was "
+                        + (focused == null ? "null" : focused.getTag() + " id=" + focused.getId())
+                        + "; expected id=" + action(code).getId() + ")",
+                action(code), focused);
         assertTrue(action(code).isShown());
+    }
+
+    /** Grid order 00 11 / 12 13 / 22 33 / 44 99; move row-first so every action is reachable. */
+    private void focusAction(String code) {
+        String[][] grid = {{"00", "11"}, {"12", "13"}, {"22", "33"}, {"44", "99"}};
+        for (String[] row : grid) {
+            for (String cell : row) {
+                if (cell.equals(code)) {
+                    action(code).requestFocus();
+                    return;
+                }
+            }
+        }
     }
 
     private PinDialog latestPinDialog() {

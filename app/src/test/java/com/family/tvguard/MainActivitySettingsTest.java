@@ -7,6 +7,7 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import org.junit.After;
@@ -210,8 +211,19 @@ public class MainActivitySettingsTest {
         ViewGroup menu = controller.get().findViewById(R.id.menu_actions);
         assertNotNull(menu);
         StringBuilder text = new StringBuilder();
+        java.util.List<View> views = new java.util.ArrayList<>();
         for (int i = 0; i < menu.getChildCount(); i++) {
-            View view = menu.getChildAt(i);
+            View child = menu.getChildAt(i);
+            if (child instanceof LinearLayout && child.getTag() == null
+                    && ((LinearLayout) child).getChildCount() == 2) {
+                LinearLayout row = (LinearLayout) child;
+                views.add(row.getChildAt(0));
+                views.add(row.getChildAt(1));
+            } else {
+                views.add(child);
+            }
+        }
+        for (View view : views) {
             if (!(view instanceof Button)) {
                 // Inline adjust rows are not shortcut actions.
                 assertNull(view.getTag());
