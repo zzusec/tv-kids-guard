@@ -79,10 +79,10 @@ public class MainActivityRemoteTest {
     @Test
     public void actualDpadMovesFocusAndOkActivatesOnlyOnRelease() {
         startPanel(false);
-        // Visible order with protection on: 00 11 12 13 22 33 44 99.
+        // Protection off: rows are 00 11 / 12 13 / 99. UP stays in column 0, RIGHT crosses.
         assertFocused("12");
         press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_UP);
-        assertFocused("11");
+        assertFocused("00");
         press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_DOWN);
         assertFocused("12");
         press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_RIGHT);
@@ -167,9 +167,7 @@ public class MainActivityRemoteTest {
         assertSame(original, action("44"));
         assertFalse(original.isShown());
         assertFocused("12");
-        // 22 is hidden now; focus skips it and lands on 13, then on 99.
-        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_DOWN);
-        assertFocused("13");
+        // 22 is hidden now; the visible rows are 00 11 / 12 13 / 99, so DOWN reaches 99.
         press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_DOWN);
         assertFocused("99");
         press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_CENTER);
@@ -182,6 +180,8 @@ public class MainActivityRemoteTest {
     public void passwordActionStillRequiresSecondMaskedPin() {
         startPanel(false);
         press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_UP);
+        assertFocused("00");
+        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_RIGHT);
         assertFocused("11");
         press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_CENTER);
         PinDialog dialog = latestPinDialog();

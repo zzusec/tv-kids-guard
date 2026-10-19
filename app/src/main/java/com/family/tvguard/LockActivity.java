@@ -359,7 +359,7 @@ public class LockActivity extends Activity {
 
     private void refreshUi() {
         GuardService service = GuardService.get();
-        titleView.setText("今日观看时间已用完");
+        titleView.setText("今日电视时长已用完");
         keypad.setInputEnabled(service != null && prefs.lockoutRemainingSeconds() == 0L);
         if (service == null) {
             promptView.setText("正在恢复服务…");

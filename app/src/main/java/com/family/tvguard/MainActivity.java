@@ -171,27 +171,63 @@ public class MainActivity extends Activity {
      * toggled; DOWN/RIGHT advance and UP/LEFT step back, both wrapping.
      */
     private boolean navigateFocus(int keyCode) {
-        List<Button> grid = new ArrayList<>();
+        // Build the visible grid row by row, keeping the two-column shape. Hidden actions are
+        // skipped, so a column can be shorter than its neighbours.
+        List<List<Button>> rows = new ArrayList<>();
         for (String[] row : GRID) {
+            List<Button> visible = new ArrayList<>();
             for (String code : row) {
                 Button button = actionButtons.get(code);
                 if (button != null && button.isShown()) {
-                    grid.add(button);
+                    visible.add(button);
                 }
             }
+            if (!visible.isEmpty()) {
+                rows.add(visible);
+            }
         }
-        if (grid.isEmpty()) {
+        if (rows.isEmpty()) {
             return false;
         }
         View focused = getWindow() == null ? null : getWindow().getDecorView().findFocus();
-        int index = grid.indexOf(focused);
-        if (index < 0) {
-            return grid.get(0).requestFocus();
+        int focusedRow = -1;
+        int focusedColumn = -1;
+        for (int r = 0; r < rows.size() && focusedRow < 0; r++) {
+            int c = rows.get(r).indexOf(focused);
+            if (c >= 0) {
+                focusedRow = r;
+                focusedColumn = c;
+            }
         }
-        boolean forward = keyCode == KeyEvent.KEYCODE_DPAD_DOWN
-                || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT;
-        int step = forward ? 1 : -1;
-        return grid.get(((index + step) % grid.size() + grid.size()) % grid.size()).requestFocus();
+        if (focusedRow < 0) {
+            return rows.get(0).get(0).requestFocus();
+        }
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_DPAD_UP:
+            case KeyEvent.KEYCODE_DPAD_DOWN: {
+                // Stay in the same column and wrap vertically.
+                int step = keyCode == KeyEvent.KEYCODE_DPAD_DOWN ? 1 : -1;
+                for (int hop = 1; hop <= rows.size(); hop++) {
+                    int r = ((focusedRow + step * hop) % rows.size() + rows.size()) % rows.size();
+                    List<Button> row = rows.get(r);
+                    if (focusedColumn < row.size()) {
+                        return row.get(focusedColumn).requestFocus();
+                    }
+                    // The column is shorter in this row (a hidden action): use the last cell.
+                    return row.get(row.size() - 1).requestFocus();
+                }
+                return false;
+            }
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+            case KeyEvent.KEYCODE_DPAD_RIGHT: {
+                // Move inside the pair, wrapping to the other cell of the same row.
+                List<Button> row = rows.get(focusedRow);
+                int column = (focusedColumn + 1) % row.size();
+                return row.get(column).requestFocus();
+            }
+            default:
+                return false;
+        }
     }
 
     private static boolean isPanelControl(View view) {

@@ -252,7 +252,7 @@ public class AdminAuthActivity extends Activity {
         if (title == null) {
             return;
         }
-        title.setText(stage == CHECK ? "家长验证" : "设置家长密码");
+        title.setText(stage == CHECK ? "今日电视时长已用完" : "设置家长密码");
         long wait = prefs.lockoutRemainingSeconds();
         if (wait > 0L) {
             input.setLength(0);
