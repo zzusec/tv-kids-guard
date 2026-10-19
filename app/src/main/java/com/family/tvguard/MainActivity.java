@@ -32,7 +32,6 @@ public class MainActivity extends Activity {
     private TextView statusText;
     private TextView warnText;
     private final Map<String, Button> actionButtons = new LinkedHashMap<>();
-    private final Map<String, View> adjustRows = new LinkedHashMap<>();
     private volatile boolean visible;
     private boolean updateExternalActivity;
     private boolean awaitingUpdatePermission;
@@ -148,10 +147,6 @@ public class MainActivity extends Activity {
             }
             menu.addView(row);
         }
-        menu.addView(buildAdjustRow("limit", "微调：每日时长", "12",
-                () -> adjustDailyLimit(-1), () -> adjustDailyLimit(1)), rowParams());
-        menu.addView(buildAdjustRow("bonus", "微调：加时长", "22",
-                () -> adjustBonus(-1), this::grantOneBonusMinute), rowParams());
     }
 
     private Button actionButton(String code, String label) {
@@ -171,13 +166,12 @@ public class MainActivity extends Activity {
     };
 
     /**
-     * Explicit DPAD navigation. Shortcuts are visited in row-first order (hidden actions are
-     * skipped); below them the two inline adjust rows keep their ±1 minute pills reachable, and
-     * UP returns to the grid. Both DOWN and UP are consumed so the platform never runs a second,
-     * geometry-based focus search.
+     * Explicit DPAD navigation over the visible shortcuts in row-first order. Hidden actions are
+     * skipped, so every shortcut stays reachable and focus never disappears when protection is
+     * toggled; DOWN/RIGHT advance and UP/LEFT step back, both wrapping.
      */
     private boolean navigateFocus(int keyCode) {
-        List<View> grid = new ArrayList<>();
+        List<Button> grid = new ArrayList<>();
         for (String[] row : GRID) {
             for (String code : row) {
                 Button button = actionButtons.get(code);
@@ -186,73 +180,23 @@ public class MainActivity extends Activity {
                 }
             }
         }
-        List<View> pills = new ArrayList<>();
-        for (View row : adjustRows.values()) {
-            if (row instanceof LinearLayout) {
-                LinearLayout line = (LinearLayout) row;
-                for (int i = 0; i < line.getChildCount(); i++) {
-                    View child = line.getChildAt(i);
-                    if (child instanceof Button && child.isShown()) {
-                        pills.add(child);
-                    }
-                }
-            }
+        if (grid.isEmpty()) {
+            return false;
         }
         View focused = getWindow() == null ? null : getWindow().getDecorView().findFocus();
         int index = grid.indexOf(focused);
+        if (index < 0) {
+            return grid.get(0).requestFocus();
+        }
         boolean forward = keyCode == KeyEvent.KEYCODE_DPAD_DOWN
                 || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT;
-        if (index >= 0) {
-            if (!forward && index == 0 && !pills.isEmpty()) {
-                return pills.get(pills.size() - 1).requestFocus();
-            }
-            int step = forward ? 1 : -1;
-            if (forward && index == grid.size() - 1 && !pills.isEmpty()) {
-                return pills.get(0).requestFocus();
-            }
-            View target = grid.get(((index + step) % grid.size() + grid.size()) % grid.size());
-            return target.requestFocus();
-        }
-        int pill = pills.indexOf(focused);
-        if (pill < 0) {
-            return grid.isEmpty() || !grid.get(0).requestFocus();
-        }
-        if (!forward) {
-            // UP leaves the adjust rows and returns to the last visible shortcut.
-            return grid.isEmpty() || !grid.get(grid.size() - 1).requestFocus();
-        }
-        int step = keyCode == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : 2;
-        View target = pills.get((pill + step) % pills.size());
-        return target.requestFocus();
+        int step = forward ? 1 : -1;
+        return grid.get(((index + step) % grid.size() + grid.size()) % grid.size()).requestFocus();
     }
 
-    private LinearLayout.LayoutParams rowParams() {
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.topMargin = Math.round(6 * getResources().getDisplayMetrics().density);
-        params.bottomMargin = Math.round(2 * getResources().getDisplayMetrics().density);
-        return params;
-    }
-
-    /** "− 1 分钟" needs a matching removal path so a mistaken press is reversible. */
-    private void adjustBonus(int minutes) {
-        if (minutes >= 0) {
-            grantOneBonusMinute();
-            return;
-        }
-        long bonus = prefs.getBonusSeconds();
-        if (bonus < 60L) {
-            toast("今天没有可撤销的加时");
-            return;
-        }
-        GuardService service = GuardService.get();
-        if (service != null) {
-            service.grantBonusMinutes(-1);
-        } else {
-            prefs.setBonusSeconds(Math.max(0L, bonus - 60L));
-        }
-        toast("已撤销 1 分钟加时");
-        refreshStatus();
+    private static boolean isPanelControl(View view) {
+        return view != null && view.getTag() != null
+                && view.getTag().toString().startsWith("action_");
     }
 
     private boolean isActionAvailable(String code) {
@@ -273,14 +217,6 @@ public class MainActivity extends Activity {
             default:
                 return false;
         }
-    }
-
-    private static boolean isPanelControl(View view) {
-        if (view == null || view.getTag() == null) {
-            return false;
-        }
-        String tag = view.getTag().toString();
-        return tag.startsWith("action_") || tag.endsWith("_minus") || tag.endsWith("_plus");
     }
 
     private boolean canExecuteAction(String code) {
@@ -430,48 +366,6 @@ public class MainActivity extends Activity {
             case "99": resumeProtection(); break;
             default: break;
         }
-    }
-
-    /** Inline, keypad-only row that needs no number keys: "− 1" and "+ 1" minute pills. */
-    private View buildAdjustRow(String tag, String caption, String action,
-                                Runnable onMinus, Runnable onPlus) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        TextView label = new TextView(this);
-        label.setText(caption);
-        label.setTextColor(getColor(R.color.on_dark_mute));
-        label.setTextSize(15);
-        LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        row.addView(label, labelParams);
-        Button minus = new Button(this);
-        minus.setId(View.generateViewId());
-        minus.setTag(tag + "_minus");
-        minus.setText("− 1 分钟");
-        RemoteKeypad.styleButton(minus);
-        Button plus = new Button(this);
-        plus.setId(View.generateViewId());
-        plus.setTag(tag + "_plus");
-        plus.setText("+ 1 分钟");
-        RemoteKeypad.styleButton(plus);
-        int gap = Math.round(8 * getResources().getDisplayMetrics().density);
-        LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        buttonParams.setMarginStart(gap);
-        row.addView(minus, buttonParams);
-        row.addView(plus, buttonParams);
-        minus.setOnClickListener(view -> {
-            if (requireParent()) {
-                onMinus.run();
-            }
-        });
-        plus.setOnClickListener(view -> {
-            if (requireParent() && (canExecuteAction(action) || "22".equals(action))) {
-                onPlus.run();
-            }
-        });
-        return row;
     }
 
     private void verifyAgain(Runnable success) {
@@ -655,56 +549,6 @@ public class MainActivity extends Activity {
                 refreshStatus();
             }
         });
-    }
-
-    /** Keypad-only bonus path: one extra minute per press, capped by the daily bonus limit. */
-    private void grantOneBonusMinute() {
-        long left = Prefs.MAX_BONUS_MINUTES - prefs.getBonusSeconds() / 60L;
-        if (left <= 0L) {
-            toast("今天最多增加 " + Prefs.MAX_BONUS_MINUTES + " 分钟");
-            return;
-        }
-        GuardService service = GuardService.get();
-        if (service == null && prefs.isProtectionEnabled()) {
-            GuardService.start(this);
-            toast("服务正在恢复，请稍后重试");
-            return;
-        }
-        if (service != null) {
-            service.grantBonusMinutes(1);
-        } else {
-            prefs.setBonusSeconds(prefs.getBonusSeconds() + 60L);
-        }
-        toast("已增加 1 分钟");
-        refreshStatus();
-    }
-
-    /** Keypad-only daily-limit adjustment; the panel shows it while no number key is pressed. */
-    private void adjustDailyLimit(int delta) {
-        int minutes = Math.max(1, Math.min(Prefs.MAX_LIMIT_MINUTES,
-                prefs.getDailyLimitMinutes() + delta));
-        if (minutes == prefs.getDailyLimitMinutes()) {
-            toast("已到可设置范围的边界");
-            return;
-        }
-        GuardService service = GuardService.get();
-        if (service == null && prefs.isProtectionEnabled()) {
-            GuardService.start(this);
-            toast("服务正在恢复，请稍后重试");
-            return;
-        }
-        try {
-            if (service != null) {
-                service.setDailyLimitMinutes(minutes);
-            } else {
-                prefs.setDailyLimitMinutes(minutes);
-            }
-            toast("每日时长已设为 " + minutes + " 分钟");
-            refreshStatus();
-        } catch (IllegalStateException e) {
-            GuardService.reportFailure("每日时长保存失败", e);
-            toast("每日时长保存失败");
-        }
     }
 
     private void lockNow() {

@@ -4,9 +4,9 @@
     android:layout_height="match_parent"
     android:background="@color/canvas"
     android:paddingStart="24dp"
-    android:paddingTop="24dp"
+    android:paddingTop="20dp"
     android:paddingEnd="24dp"
-    android:paddingBottom="24dp">
+    android:paddingBottom="32dp">
 
     <ScrollView
         android:id="@+id/main_scroll"
@@ -112,7 +112,8 @@
                 style="@style/Text.Caption"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="18dp"
+                android:layout_marginTop="16dp"
+                android:layout_marginBottom="8dp"
                 android:alpha="0.7" />
         </LinearLayout>
     </ScrollView>
