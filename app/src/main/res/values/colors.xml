@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- PlayStation-style dark canvas: pure black stage, elevated charcoal panels. -->
+    <color name="canvas">#000000</color>
+    <color name="surface">#121314</color>
+    <color name="surface_card">#181818</color>
+    <color name="hairline">#33E5E5E5</color>
+    <color name="on_dark">#FFFFFF</color>
+    <color name="on_dark_mute">#CCCCCC</color>
+    <color name="mute_dark">#99E5E5E5</color>
+    <color name="accent">#0070D1</color>
+    <color name="accent_light">#53B1FF</color>
+    <color name="warning">#C81B3A</color>
+    <color name="disabled_text">#7A7F87</color>
+</resources>

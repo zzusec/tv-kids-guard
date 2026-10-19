@@ -21,6 +21,7 @@ public final class RemoteKeypad extends LinearLayout {
     private final Button[] keys = new Button[12];
     private boolean inputEnabled = true;
     private View savedFocus;
+    private View focusedKey;
 
     public RemoteKeypad(Context context, Listener listener) {
         super(context);
@@ -28,7 +29,7 @@ public final class RemoteKeypad extends LinearLayout {
         setFocusable(false);
         setDescendantFocusability(FOCUS_AFTER_DESCENDANTS);
         int[] digits = {1, 2, 3, 4, 5, 6, 7, 8, 9, -1, 0, -2};
-        int gap = dp(context, 2);
+        int gap = dp(context, 4);
         for (int row = 0; row < 4; row++) {
             LinearLayout line = new LinearLayout(context);
             line.setOrientation(HORIZONTAL);
@@ -80,11 +81,16 @@ public final class RemoteKeypad extends LinearLayout {
                     }
                 });
                 key.setOnFocusChangeListener((view, hasFocus) -> {
+                    if (hasFocus) {
+                        focusedKey = view;
+                    } else if (focusedKey == view) {
+                        focusedKey = null;
+                    }
                     if (!hasFocus) {
                         view.setPressed(false);
                     }
                 });
-                LayoutParams params = new LayoutParams(0, dp(context, 48), 1f);
+                LayoutParams params = new LayoutParams(0, dp(context, 52), 1f);
                 params.setMargins(gap, gap, gap, gap);
                 line.addView(key, params);
                 keys[index] = key;
@@ -100,6 +106,29 @@ public final class RemoteKeypad extends LinearLayout {
             keys[i].setNextFocusForwardId(keys[(i + 1) % keys.length].getId());
         }
         keys[0].requestFocus();
+    }
+
+    /** Focus the "1" key; used by the parent gate before it dispatches the first OK. */
+    public void focusFirst() {
+        keys[0].requestFocus();
+    }
+
+    /**
+     * Clicks the key that currently owns the focus ring.
+     *
+     * <p>Television remotes are inconsistent about delivering OK to the focused view: some
+     * firmwares never run the button's key handler, so the screen looks focused but inert.
+     * Activating the focused key from the activity's own dispatch removes that dependency.
+     *
+     * @return true when a key was activated, false when some other control holds the focus.
+     */
+    public boolean activateFocused() {
+        View key = focusedKey;
+        if (key == null || !inputEnabled || !key.isEnabled() || !key.isShown()) {
+            return false;
+        }
+        key.performClick();
+        return true;
     }
 
     /** Disable entry without replacing views or changing their focus-neighbor graph. */
@@ -137,15 +166,16 @@ public final class RemoteKeypad extends LinearLayout {
         button.setBackgroundTintList(null);
         button.setTextColor(new ColorStateList(new int[][] {
                 {-android.R.attr.state_enabled}, {}
-        }, new int[] {Color.parseColor("#78828D"), Color.WHITE}));
-        button.setTextSize(22);
+        }, new int[] {Color.parseColor("#7A7F87"), Color.WHITE}));
+        button.setTextSize(21);
         button.setAllCaps(false);
         button.setMinWidth(0);
         button.setMinimumWidth(0);
-        button.setMinHeight(dp(button.getContext(), 48));
-        button.setMinimumHeight(dp(button.getContext(), 48));
-        button.setPadding(dp(button.getContext(), 12), dp(button.getContext(), 8),
-                dp(button.getContext(), 12), dp(button.getContext(), 8));
+        button.setMinHeight(dp(button.getContext(), 52));
+        button.setMinimumHeight(dp(button.getContext(), 52));
+        button.setPadding(dp(button.getContext(), 16), dp(button.getContext(), 8),
+                dp(button.getContext(), 16), dp(button.getContext(), 8));
+        button.setStateListAnimator(null);
         button.setFocusable(true);
         button.setFocusableInTouchMode(true);
     }
@@ -168,7 +198,7 @@ public final class RemoteKeypad extends LinearLayout {
         details.setLayoutParams(detailsParams);
         details.setPaddingRelative(0, 0, narrow ? 0 : dp(activity, 24), 0);
         LayoutParams columnParams = (LayoutParams) column.getLayoutParams();
-        columnParams.width = dp(activity, Math.max(0, Math.min(320, widthDp - 48)));
+        columnParams.width = dp(activity, Math.max(0, Math.min(320, widthDp - 64)));
         column.setLayoutParams(columnParams);
     }
 

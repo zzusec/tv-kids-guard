@@ -30,9 +30,11 @@ public class MainActivity extends Activity {
     private TextView statusText;
     private TextView warnText;
     private final Map<String, Button> actionButtons = new LinkedHashMap<>();
+    private final Map<String, View> adjustRows = new LinkedHashMap<>();
     private volatile boolean visible;
     private boolean updateExternalActivity;
     private boolean awaitingUpdatePermission;
+    private boolean updatePrompted;
     /** Set while this activity is only bouncing to the parent gate; that is not a sign-out. */
     private boolean redirectingToGate;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -92,8 +94,10 @@ public class MainActivity extends Activity {
         int screenHeight = getResources().getDisplayMetrics().heightPixels;
         View scroll = findViewById(R.id.main_scroll);
         ViewGroup.LayoutParams panelParams = scroll.getLayoutParams();
+        // The FrameLayout's 24dp side padding already frames the panel; leave a little more so
+        // the focus ring on full-width pills is never clipped.
         panelParams.width = Math.min(Math.round(900 * density),
-                Math.max(1, screenWidth - Math.round(48 * density)));
+                Math.max(1, screenWidth - Math.round(72 * density)));
         scroll.setLayoutParams(panelParams);
 
         LinearLayout columns = findViewById(R.id.panel_columns);
@@ -131,11 +135,50 @@ public class MainActivity extends Activity {
             RemoteKeypad.styleButton(button);
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            params.topMargin = Math.round(6 * getResources().getDisplayMetrics().density);
+            params.topMargin = Math.round(8 * getResources().getDisplayMetrics().density);
             menu.addView(button, params);
             button.setOnClickListener(view -> executeAction(code));
             actionButtons.put(code, button);
+            // The keypad-only rows sit after the whole shortcut list so DPAD order across the
+            // eight actions stays exactly as before.
+            if ("12".equals(code) || "22".equals(code)) {
+                adjustRows.put(code, buildAdjustRow(code.equals("12") ? "limit" : "bonus",
+                        code.equals("12") ? "微调：每日时长" : "微调：加时长", code,
+                        code.equals("12") ? () -> adjustDailyLimit(-1) : () -> adjustBonus(-1),
+                        code.equals("12") ? () -> adjustDailyLimit(1) : this::grantOneBonusMinute));
+            }
         }
+        menu.addView(adjustRows.get("12"), rowParams());
+        menu.addView(adjustRows.get("22"), rowParams());
+    }
+
+    private LinearLayout.LayoutParams rowParams() {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.topMargin = Math.round(6 * getResources().getDisplayMetrics().density);
+        params.bottomMargin = Math.round(2 * getResources().getDisplayMetrics().density);
+        return params;
+    }
+
+    /** "− 1 分钟" needs a matching removal path so a mistaken press is reversible. */
+    private void adjustBonus(int minutes) {
+        if (minutes >= 0) {
+            grantOneBonusMinute();
+            return;
+        }
+        long bonus = prefs.getBonusSeconds();
+        if (bonus < 60L) {
+            toast("今天没有可撤销的加时");
+            return;
+        }
+        GuardService service = GuardService.get();
+        if (service != null) {
+            service.grantBonusMinutes(-1);
+        } else {
+            prefs.setBonusSeconds(Math.max(0L, bonus - 60L));
+        }
+        toast("已撤销 1 分钟加时");
+        refreshStatus();
     }
 
     private boolean isActionAvailable(String code) {
@@ -286,16 +329,52 @@ public class MainActivity extends Activity {
             case "13": checkUpdate(); break;
             case "22": addBonus(); break;
             case "33": lockNow(); break;
-            case "44":
-                verifyAgain(() -> {
-                    if (canExecuteAction("44")) {
-                        confirmRemoval();
-                    }
-                });
-                break;
+            case "44": confirmRemoval(); break;
             case "99": resumeProtection(); break;
             default: break;
         }
+    }
+
+    /** Inline, keypad-only row that needs no number keys: "− 1" and "+ 1" minute pills. */
+    private View buildAdjustRow(String tag, String caption, String action,
+                                Runnable onMinus, Runnable onPlus) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        TextView label = new TextView(this);
+        label.setText(caption);
+        label.setTextColor(getColor(R.color.on_dark_mute));
+        label.setTextSize(15);
+        LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        row.addView(label, labelParams);
+        Button minus = new Button(this);
+        minus.setId(View.generateViewId());
+        minus.setTag(tag + "_minus");
+        minus.setText("− 1 分钟");
+        RemoteKeypad.styleButton(minus);
+        Button plus = new Button(this);
+        plus.setId(View.generateViewId());
+        plus.setTag(tag + "_plus");
+        plus.setText("+ 1 分钟");
+        RemoteKeypad.styleButton(plus);
+        int gap = Math.round(8 * getResources().getDisplayMetrics().density);
+        LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        buttonParams.setMarginStart(gap);
+        row.addView(minus, buttonParams);
+        row.addView(plus, buttonParams);
+        minus.setOnClickListener(view -> {
+            if (requireParent()) {
+                onMinus.run();
+            }
+        });
+        plus.setOnClickListener(view -> {
+            if (requireParent() && (canExecuteAction(action) || "22".equals(action))) {
+                onPlus.run();
+            }
+        });
+        return row;
     }
 
     private void verifyAgain(Runnable success) {
@@ -308,6 +387,34 @@ public class MainActivity extends Activity {
                         ? "请等待 " + prefs.lockoutRemainingSeconds() + " 秒后重试" : "密码不正确");
             }
         });
+    }
+
+    /** Fetches a newly published release, then installs it; download progress stays on the panel. */
+    private void checkUpdate() {
+        UpdateManager.Snapshot update = UpdateManager.snapshot(this);
+        if (UpdateInstaller.hasActiveSession(this)) {
+            toast("正在准备安装");
+        } else if ("ready".equals(update.status)) {
+            beginUpdate();
+        } else if ("checking".equals(update.status) || "downloading".equals(update.status)) {
+            toast(update.message);
+        } else {
+            UpdateManager.checkNow(this);
+            toast("正在检查更新，下载完成后会询问是否安装");
+            refreshStatus();
+        }
+    }
+
+    /** Called from the one-second refresh: a finished download asks for install automatically. */
+    private void offerReadyUpdate() {
+        UpdateManager.Snapshot update = UpdateManager.snapshot(this);
+        if ("ready".equals(update.status) && !UpdateInstaller.hasActiveSession(this)
+                && !updatePrompted && AdminSession.isActive()) {
+            updatePrompted = true;
+            beginUpdate();
+        } else if (!"ready".equals(update.status)) {
+            updatePrompted = false;
+        }
     }
 
     private void showPin(String title, String message, int length, PinDialog.Listener listener) {
@@ -348,26 +455,6 @@ public class MainActivity extends Activity {
                 }
             });
         });
-    }
-
-    private void checkUpdate() {
-        UpdateManager.Snapshot update = UpdateManager.snapshot(this);
-        if (UpdateInstaller.hasActiveSession(this)) {
-            toast("正在准备安装");
-        } else if ("ready".equals(update.status)) {
-            verifyAgain(() -> showPin("安装更新 " + update.versionName,
-                    "保留密码与计时数据\n输入 99，按 OK 安装", 2, false, value -> {
-                        if ("99".equals(value)) {
-                            beginUpdate();
-                        }
-                    }));
-        } else if ("checking".equals(update.status) || "downloading".equals(update.status)) {
-            toast(update.message);
-        } else {
-            UpdateManager.checkNow(this);
-            toast("正在检查更新");
-            refreshStatus();
-        }
     }
 
     private void beginUpdate() {
@@ -422,30 +509,30 @@ public class MainActivity extends Activity {
     private void promptDailyLimit() {
         showPin("每日时长", "当前 " + prefs.getDailyLimitMinutes() + " 分钟\n输入 1-"
                 + Prefs.MAX_LIMIT_MINUTES + " 分钟，按 OK 保存", 4, false, value -> {
-            int minutes = Integer.parseInt(value);
-            if (minutes < 1 || minutes > Prefs.MAX_LIMIT_MINUTES) {
-                toast("请输入 1-" + Prefs.MAX_LIMIT_MINUTES + " 之间的分钟数");
-                return;
-            }
-            GuardService service = GuardService.get();
-            if (service == null && prefs.isProtectionEnabled()) {
-                GuardService.start(this);
-                toast("服务正在恢复，请稍后重试");
-                return;
-            }
-            try {
-                if (service != null) {
-                    service.setDailyLimitMinutes(minutes);
-                } else {
-                    prefs.setDailyLimitMinutes(minutes);
-                }
-                toast("每日时长已设为 " + minutes + " 分钟");
-                refreshStatus();
-            } catch (IllegalStateException e) {
-                GuardService.reportFailure("每日时长保存失败", e);
-                toast("每日时长保存失败");
-            }
-        });
+                    int minutes = Integer.parseInt(value);
+                    if (minutes < 1 || minutes > Prefs.MAX_LIMIT_MINUTES) {
+                        toast("请输入 1-" + Prefs.MAX_LIMIT_MINUTES + " 之间的分钟数");
+                        return;
+                    }
+                    GuardService service = GuardService.get();
+                    if (service == null && prefs.isProtectionEnabled()) {
+                        GuardService.start(this);
+                        toast("服务正在恢复，请稍后重试");
+                        return;
+                    }
+                    try {
+                        if (service != null) {
+                            service.setDailyLimitMinutes(minutes);
+                        } else {
+                            prefs.setDailyLimitMinutes(minutes);
+                        }
+                        toast("每日时长已设为 " + minutes + " 分钟");
+                        refreshStatus();
+                    } catch (IllegalStateException e) {
+                        GuardService.reportFailure("每日时长保存失败", e);
+                        toast("每日时长保存失败");
+                    }
+                });
     }
 
     private void addBonus() {
@@ -473,6 +560,56 @@ public class MainActivity extends Activity {
         });
     }
 
+    /** Keypad-only bonus path: one extra minute per press, capped by the daily bonus limit. */
+    private void grantOneBonusMinute() {
+        long left = Prefs.MAX_BONUS_MINUTES - prefs.getBonusSeconds() / 60L;
+        if (left <= 0L) {
+            toast("今天最多增加 " + Prefs.MAX_BONUS_MINUTES + " 分钟");
+            return;
+        }
+        GuardService service = GuardService.get();
+        if (service == null && prefs.isProtectionEnabled()) {
+            GuardService.start(this);
+            toast("服务正在恢复，请稍后重试");
+            return;
+        }
+        if (service != null) {
+            service.grantBonusMinutes(1);
+        } else {
+            prefs.setBonusSeconds(prefs.getBonusSeconds() + 60L);
+        }
+        toast("已增加 1 分钟");
+        refreshStatus();
+    }
+
+    /** Keypad-only daily-limit adjustment; the panel shows it while no number key is pressed. */
+    private void adjustDailyLimit(int delta) {
+        int minutes = Math.max(1, Math.min(Prefs.MAX_LIMIT_MINUTES,
+                prefs.getDailyLimitMinutes() + delta));
+        if (minutes == prefs.getDailyLimitMinutes()) {
+            toast("已到可设置范围的边界");
+            return;
+        }
+        GuardService service = GuardService.get();
+        if (service == null && prefs.isProtectionEnabled()) {
+            GuardService.start(this);
+            toast("服务正在恢复，请稍后重试");
+            return;
+        }
+        try {
+            if (service != null) {
+                service.setDailyLimitMinutes(minutes);
+            } else {
+                prefs.setDailyLimitMinutes(minutes);
+            }
+            toast("每日时长已设为 " + minutes + " 分钟");
+            refreshStatus();
+        } catch (IllegalStateException e) {
+            GuardService.reportFailure("每日时长保存失败", e);
+            toast("每日时长保存失败");
+        }
+    }
+
     private void lockNow() {
         GuardService service = GuardService.get();
         if (service == null) {
@@ -485,13 +622,17 @@ public class MainActivity extends Activity {
     }
 
     private void confirmRemoval() {
-        showPin("关闭防护", "将停止管控，不会清除数据。\n输入 99 确认。", 2, value -> {
-            if (!canExecuteAction("44") || !"99".equals(value) || !AdminSession.beginRemoval()) {
-                return;
-            }
-            LockActivity.dismissForMaintenance();
-            removeProtection(0);
-        });
+        new AlertDialog.Builder(this).setTitle("关闭防护")
+                .setMessage("将停止管控，不会清除数据。\n确认关闭请按「确认」，返回请按「取消」。")
+                .setNegativeButton("取消", null)
+                .setPositiveButton("确认关闭", (dialog, which) -> {
+                    if (!canExecuteAction("44") || !AdminSession.beginRemoval()) {
+                        return;
+                    }
+                    LockActivity.dismissForMaintenance();
+                    removeProtection(0);
+                })
+                .show();
     }
 
     private void removeProtection(int attempt) {
@@ -558,6 +699,9 @@ public class MainActivity extends Activity {
         if (!installation.isEmpty()) {
             updateText += "\n" + installation;
         }
+        if ("ready".equals(update.status)) {
+            updateText += "\n按 13 安装，已下载 " + update.versionName;
+        }
         ((TextView) findViewById(R.id.update_text)).setText(updateText);
         View focused = findViewById(R.id.menu_actions).findFocus();
         boolean focusedActionHidden = false;
@@ -587,6 +731,7 @@ public class MainActivity extends Activity {
         }
         warnText.setVisibility(warning.length() == 0 ? View.GONE : View.VISIBLE);
         warnText.setText(warning.toString().trim());
+        offerReadyUpdate();
     }
 
     private void closePanel() {

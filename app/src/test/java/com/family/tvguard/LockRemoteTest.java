@@ -100,7 +100,11 @@ public class LockRemoteTest {
     @Test
     public void parentManagementIsReachableWithoutNumericKeysAndDoesNotUnlockQuota() {
         View management = activity.findViewById(R.id.parent_manage);
-        assertTrue(management.hasFocus());
+        assertNotNull(management);
+        assertTrue(management.isShown());
+        // "家长管理" holds the default focus so a bare OK opens the parent gate.
+        assertEquals("parent_manage",
+                activity.getWindow().getDecorView().findFocus().getTag());
         press(KeyEvent.KEYCODE_DPAD_CENTER);
 
         assertNotNull(shadowOf(activity).getNextStartedActivity());

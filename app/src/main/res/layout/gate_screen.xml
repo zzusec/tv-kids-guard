@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/gate_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/canvas"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:paddingStart="64dp"
+    android:paddingEnd="64dp">
+
+    <TextView
+        android:id="@+id/lock_brand"
+        style="@style/Text.Caption"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/pill_bg"
+        android:paddingStart="14dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="14dp"
+        android:paddingBottom="6dp"
+        android:text="家长验证"
+        android:textColor="@color/accent_light" />
+
+    <TextView
+        android:id="@+id/lock_title"
+        style="@style/Text.Display"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="22dp"
+        android:gravity="center"
+        android:text="今日观看时间已用完"
+        android:textSize="38sp" />
+
+    <TextView
+        android:id="@+id/lock_prompt"
+        style="@style/Text.Body"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="18dp"
+        android:gravity="center"
+        android:text="请输入 6 位家长密码"
+        android:textSize="20sp" />
+
+    <TextView
+        android:id="@+id/lock_input"
+        style="@style/Text.Accent"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="22dp"
+        android:gravity="center"
+        android:minHeight="56dp"
+        android:textColor="@color/accent_light"
+        android:textSize="40sp" />
+</LinearLayout>

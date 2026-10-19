@@ -212,7 +212,11 @@ public class MainActivitySettingsTest {
         StringBuilder text = new StringBuilder();
         for (int i = 0; i < menu.getChildCount(); i++) {
             View view = menu.getChildAt(i);
-            assertTrue("Actions must be actual focusable buttons", view instanceof Button);
+            if (!(view instanceof Button)) {
+                // Inline adjust rows are not shortcut actions.
+                assertNull(view.getTag());
+                continue;
+            }
             Button button = (Button) view;
             if (button.isShown()) {
                 assertTrue(button.isFocusable());

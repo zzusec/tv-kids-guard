@@ -483,11 +483,11 @@ public class GuardService extends Service {
 
     /** Grants extra minutes on top of the daily limit and releases the current lock. */
     void grantBonusMinutes(int minutes) {
-        if (!AdminSession.isActive() || minutes <= 0
+        if (!AdminSession.isActive() || minutes == 0
                 || minutes > Prefs.MAX_BONUS_MINUTES - prefs.getBonusSeconds() / 60L) {
             throw new IllegalArgumentException("Parent authorization and valid bonus required");
         }
-        long seconds = prefs.getBonusSeconds() + minutes * 60L;
+        long seconds = Math.max(0L, prefs.getBonusSeconds() + minutes * 60L);
         prefs.setBonusSeconds(seconds);
         prefs.setUnlockedToday(false);
         if (locked) {

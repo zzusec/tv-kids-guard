@@ -121,7 +121,9 @@ public class MainActivityUpdateTest {
         int updateEntries = 0;
         for (int i = 0; i < menu.getChildCount(); i++) {
             View action = menu.getChildAt(i);
-            assertTrue(action instanceof Button);
+            if (!(action instanceof Button)) {
+                continue;
+            }
             if (action.isShown() && "action_13".equals(action.getTag())) {
                 updateEntries++;
                 assertTrue(action.isFocusable());

@@ -154,7 +154,7 @@ public class RemoteKeypadTest {
         keypad.measure(View.MeasureSpec.makeMeasureSpec(320, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
         float density = activity.getResources().getDisplayMetrics().density;
-        assertTrue(keypad.getMeasuredHeight() <= Math.round(216 * density));
+        assertTrue(keypad.getMeasuredHeight() <= Math.round(240 * density));
     }
 
     @Test
@@ -187,7 +187,7 @@ public class RemoteKeypadTest {
         assertEquals(LinearLayout.VERTICAL, content.getOrientation());
         assertEquals(0f, ((LinearLayout.LayoutParams) details.getLayoutParams()).weight, 0f);
         assertEquals(0, details.getPaddingEnd());
-        assertEquals(Math.round(272 * activity.getResources().getDisplayMetrics().density),
+        assertEquals(Math.round(256 * activity.getResources().getDisplayMetrics().density),
                 column.getLayoutParams().width);
     }
 

@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/lock_scroll"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#000000"
+    android:background="@color/canvas"
+    android:clipToPadding="false"
     android:fillViewport="true">
 
     <LinearLayout
@@ -11,7 +13,10 @@
         android:layout_height="wrap_content"
         android:gravity="center"
         android:orientation="horizontal"
-        android:padding="24dp">
+        android:paddingStart="48dp"
+        android:paddingTop="24dp"
+        android:paddingEnd="48dp"
+        android:paddingBottom="24dp">
 
         <LinearLayout
             android:id="@+id/lock_details"
@@ -19,36 +24,47 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:orientation="vertical"
-            android:paddingEnd="24dp">
+            android:paddingEnd="40dp">
+
+            <TextView
+                android:id="@+id/lock_brand"
+                style="@style/Text.Caption"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/pill_bg"
+                android:paddingStart="14dp"
+                android:paddingTop="6dp"
+                android:paddingEnd="14dp"
+                android:paddingBottom="6dp"
+                android:text="家长管控"
+                android:textColor="@color/accent_light" />
 
             <TextView
                 android:id="@+id/lock_title"
+                style="@style/Text.Display"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
                 android:text="今日观看时间已用完"
-                android:textColor="#FFFFFF"
-                android:textSize="32sp"
-                android:textStyle="bold" />
+                android:textSize="36sp" />
 
             <TextView
                 android:id="@+id/lock_prompt"
+                style="@style/Text.Body"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:text="请输入家长密码"
-                android:textColor="#B0B0B0"
-                android:textSize="20sp" />
+                android:layout_marginTop="14dp"
+                android:text="输入 6 位家长密码解除限时"
+                android:textSize="18sp" />
 
             <TextView
                 android:id="@+id/lock_input"
+                style="@style/Text.Accent"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:letterSpacing="0.3"
+                android:layout_marginTop="20dp"
                 android:minHeight="48dp"
-                android:textColor="#4FC3F7"
-                android:textSize="36sp"
-                android:textStyle="bold" />
+                android:textColor="@color/accent_light" />
         </LinearLayout>
 
         <LinearLayout
@@ -65,9 +81,10 @@
 
             <Button
                 android:id="@+id/parent_manage"
+                style="@style/Widget.PillButton"
                 android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:layout_marginTop="12dp"
+                android:layout_height="52dp"
+                android:layout_marginTop="14dp"
                 android:text="家长管理"
                 android:visibility="gone" />
         </LinearLayout>

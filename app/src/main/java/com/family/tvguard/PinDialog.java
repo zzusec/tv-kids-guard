@@ -61,25 +61,26 @@ final class PinDialog extends Dialog {
         int pad = Math.round(density * 20);
         LinearLayout box = new LinearLayout(getContext());
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setBackgroundColor(Color.parseColor("#12171D"));
+        box.setBackgroundColor(Color.parseColor("#121314"));
         box.setPadding(pad, pad, pad, pad);
 
         TextView titleView = new TextView(getContext());
         titleView.setText(title);
         titleView.setTextColor(Color.WHITE);
         titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 26);
+        titleView.setLetterSpacing(0.01f);
         titleView.setTypeface(Typeface.DEFAULT_BOLD);
         box.addView(titleView);
 
         TextView messageView = new TextView(getContext());
         messageView.setText(message);
-        messageView.setTextColor(Color.parseColor("#B9C4CF"));
+        messageView.setTextColor(Color.parseColor("#CCCCCC"));
         messageView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         messageView.setPadding(0, Math.round(density * 12), 0, 0);
         box.addView(messageView);
 
         inputView = new TextView(getContext());
-        inputView.setTextColor(Color.parseColor("#4FC3F7"));
+        inputView.setTextColor(Color.parseColor("#53B1FF"));
         inputView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 36);
         inputView.setTypeface(Typeface.DEFAULT_BOLD);
         inputView.setLetterSpacing(0.3f);

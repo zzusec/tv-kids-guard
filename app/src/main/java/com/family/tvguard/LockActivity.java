@@ -26,6 +26,7 @@ public class LockActivity extends Activity {
     private Prefs prefs;
     private RemoteKeypad keypad;
     private boolean physicalInput;
+    private boolean rejected;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
     private final Runnable ticker = new Runnable() {
@@ -307,8 +308,23 @@ public class LockActivity extends Activity {
             physicalInput = false;
             return super.dispatchKeyEvent(event);
         }
-        if (RemoteKeypad.isSelectKey(code) && !physicalInput) {
-            return super.dispatchKeyEvent(event);
+        // OK activates the highlighted key. Driving it from here (instead of relying on the
+        // focused button's own key handler) is what makes the on-screen keypad work on remotes
+        // whose OK never reaches the view. The default focus is 家长管理, so a bare OK still
+        // opens the parent gate.
+        if (RemoteKeypad.isSelectKey(code)) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                GuardService current = GuardService.get();
+                if (keypad.activateFocused()) {
+                    refreshUi();
+                } else if (current == null || current.lockInput().isEmpty()) {
+                    openParentGate(this);
+                } else {
+                    current.onOk();
+                    refreshUi();
+                }
+            }
+            return true;
         }
         if (event.getAction() != KeyEvent.ACTION_DOWN || event.getRepeatCount() > 0) {
             return true;
@@ -333,8 +349,9 @@ public class LockActivity extends Activity {
         GuardService service = GuardService.get();
         if (service != null && prefs.lockoutRemainingSeconds() == 0L) {
             service.onDigit(digit);
+            rejected = false;
             if (service.isPasswordComplete()) {
-                service.onOk();
+                rejected = !service.onOk();
             }
         }
         refreshUi();
@@ -353,6 +370,9 @@ public class LockActivity extends Activity {
         if (wait > 0L) {
             promptView.setText(String.format(java.util.Locale.US,
                     "错误次数过多，请等待 %d 分 %d 秒", wait / 60L, wait % 60L));
+            inputView.setText("");
+        } else if (rejected) {
+            promptView.setText("密码不正确，请重新输入");
             inputView.setText("");
         } else {
             promptView.setText(prefs.needsPasswordSetup()

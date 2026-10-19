@@ -28,8 +28,12 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
+import java.security.KeyStore;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -38,6 +42,13 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509TrustManager;
 
 /** Downloads only. Installation and parent authorization belong to the caller. */
 public final class UpdateManager {
@@ -66,8 +77,9 @@ public final class UpdateManager {
         HttpURLConnection open(URL url) throws IOException;
     }
 
-    // A narrow transport seam for offline tests; production uses platform TLS and trust store.
-    static volatile ConnectionFactory connections = url -> (HttpURLConnection) url.openConnection();
+    // A narrow transport seam for offline tests; production uses platform TLS plus the public
+    // GitHub roots so televisions with a 2016 system trust store can still verify the release.
+    static volatile ConnectionFactory connections = UpdateManager::openConnection;
 
     private UpdateManager() {}
 
@@ -510,8 +522,7 @@ public final class UpdateManager {
         }
     }
 
-    static HttpURLConnection open(URL url, Cancellation cancellation, String accept) throws IOException {
-        for (int redirects = 0; ; redirects++) {
+    static HttpURLConnection open(URL url, Cancellation cancellation, String accept) throws IOException {        for (int redirects = 0; ; redirects++) {
             cancellation.check();
             validateUrl(url);
             HttpURLConnection connection = connections.open(url);
@@ -547,6 +558,100 @@ public final class UpdateManager {
                 cancellation.connection = null;
                 throw e;
             }
+        }
+    }
+
+    /** HTTPS to the pinned update hosts only, verified against the platform store and our roots. */
+    private static HttpURLConnection openConnection(URL url) throws IOException {
+        if (!"https".equalsIgnoreCase(url.getProtocol())) {
+            throw new IOException("更新地址必须使用 HTTPS");
+        }
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        if (connection instanceof HttpsURLConnection) {
+            ((HttpsURLConnection) connection).setSSLSocketFactory(trustingFactory());
+        }
+        return connection;
+    }
+
+    /** Platform CAs plus the embedded public roots; never disables certificate validation. */
+    private static SSLSocketFactory trustingFactory() throws IOException {
+        try {
+            SSLContext context = SSLContext.getInstance("TLS");
+            context.init(null, new TrustManager[] {new CombinedTrustManager()}, null);
+            return context.getSocketFactory();
+        } catch (GeneralSecurityException e) {
+            throw new IOException("无法初始化更新 TLS", e);
+        }
+    }
+
+    private static final class CombinedTrustManager implements X509TrustManager {
+        private final X509TrustManager platform;
+        private final X509TrustManager pinned;
+
+        CombinedTrustManager() throws IOException {
+            platform = defaultTrustManager();
+            pinned = trustManager(UpdateTrust.store());
+        }
+
+        private static X509TrustManager defaultTrustManager() throws IOException {
+            try {
+                TrustManagerFactory factory =
+                        TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+                factory.init((KeyStore) null);
+                for (TrustManager manager : factory.getTrustManagers()) {
+                    if (manager instanceof X509TrustManager) {
+                        return (X509TrustManager) manager;
+                    }
+                }
+            } catch (GeneralSecurityException e) {
+                throw new IOException("系统信任库不可用", e);
+            }
+            throw new IOException("系统信任库不可用");
+        }
+
+        private static X509TrustManager trustManager(KeyStore store) throws IOException {
+            try {
+                TrustManagerFactory factory =
+                        TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+                factory.init(store);
+                for (TrustManager manager : factory.getTrustManagers()) {
+                    if (manager instanceof X509TrustManager) {
+                        return (X509TrustManager) manager;
+                    }
+                }
+            } catch (GeneralSecurityException e) {
+                throw new IOException("内置更新根证书不可用", e);
+            }
+            throw new IOException("内置更新根证书不可用");
+        }
+
+        @Override
+        public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+            platform.checkClientTrusted(chain, authType);
+        }
+
+        @Override
+        public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+            try {
+                platform.checkServerTrusted(chain, authType);
+            } catch (CertificateException platformFailure) {
+                try {
+                    pinned.checkServerTrusted(chain, authType);
+                } catch (CertificateException pinnedFailure) {
+                    pinnedFailure.addSuppressed(platformFailure);
+                    throw pinnedFailure;
+                }
+            }
+        }
+
+        @Override
+        public X509Certificate[] getAcceptedIssuers() {
+            X509Certificate[] system = platform.getAcceptedIssuers();
+            X509Certificate[] builtIn = pinned.getAcceptedIssuers();
+            X509Certificate[] all = new X509Certificate[system.length + builtIn.length];
+            System.arraycopy(system, 0, all, 0, system.length);
+            System.arraycopy(builtIn, 0, all, system.length, builtIn.length);
+            return all;
         }
     }
 
@@ -685,12 +790,17 @@ public final class UpdateManager {
         if (!editor.commit()) throw new IOException("无法持久保存更新状态");
     }
 
-    private static String concise(Exception exception) {
+    static String concise(Exception exception) {
         String message = exception.getMessage();
         if (message == null || message.trim().isEmpty()) message = exception.getClass().getSimpleName();
         message = message.replaceAll("[\\r\\n]", " ");
         // Never persist signed redirect URLs or long server bodies in the parent-facing state.
         if (message.contains("://")) message = exception.getClass().getSimpleName() + "：更新网络请求失败";
+        if (message.contains("Trust anchor for certification path not found")
+                || message.contains("PKIX path building failed")) {
+            // A stale television trust store is not something the parent can act on.
+            return "证书校验失败：电视系统证书过旧，请稍后重试";
+        }
         return message.length() > 180 ? message.substring(0, 180) : message;
     }
 

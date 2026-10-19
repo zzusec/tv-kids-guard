@@ -7,6 +7,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.PowerManager;
 import android.view.KeyEvent;
+import android.view.View;
 
 import org.junit.After;
 import org.junit.Before;
@@ -357,6 +358,10 @@ public class GuardServiceAuthTest {
         LockActivity lock = startLock();
         taskManager.setLockTaskModeState(ActivityManager.LOCK_TASK_MODE_LOCKED);
 
+        // "家长管理" holds the default focus, so a bare OK opens the parent gate directly.
+        View parent = lock.findViewById(R.id.parent_manage);
+        assertNotNull(parent);
+        assertTrue(parent.hasFocus());
         assertTrue(lock.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, keyCode)));
         assertTrue(lock.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, keyCode)));
 

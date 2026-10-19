@@ -73,14 +73,20 @@ public class RemoteAuthTest {
     }
 
     @Test
-    public void parentGateAcceptsFirstFocusedDigitBeforeAnyNavigation() {
+    public void parentGateKeepsTheSimpleNumberEntryInterface() {
         prefs.setPassword("135790");
         AdminAuthActivity activity = startAuth();
 
-        press(activity, KeyEvent.KEYCODE_DPAD_CENTER);
-
+        // The previous, keypad-free gate: physical number keys, delete and OK only.
+        assertNull(activity.findViewById(R.id.keypad_container));
+        digits(activity, "13");
+        assertEquals("●●", ((TextView) activity.findViewById(R.id.lock_input)).getText().toString());
+        press(activity, KeyEvent.KEYCODE_DEL);
         assertEquals("●", ((TextView) activity.findViewById(R.id.lock_input)).getText().toString());
+        press(activity, KeyEvent.KEYCODE_DEL);
+        assertEquals("", ((TextView) activity.findViewById(R.id.lock_input)).getText().toString());
         assertFalse(AdminSession.isActive());
+        assertEquals(0, prefs.getFailCount());
     }
 
     @Test
@@ -158,8 +164,6 @@ public class RemoteAuthTest {
     public void virtualParentPinUsesAuthenticationAndOpensConsole() {
         prefs.setPassword("135790");
         AdminAuthActivity activity = startAuth();
-        assertEquals(View.GONE, activity.findViewById(R.id.parent_manage).getVisibility());
-        enterNavigation(activity);
         virtualDigits(activity, "13579");
         assertEquals("●●●●●", ((TextView) activity.findViewById(R.id.lock_input)).getText().toString());
         virtualDigits(activity, "0");
@@ -175,7 +179,6 @@ public class RemoteAuthTest {
         prefs.setUsedSeconds(Prefs.DEFAULT_LIMIT_MINUTES * 60L);
         prefs.setLocked(true);
         AdminAuthActivity activity = startAuth();
-        enterNavigation(activity);
         virtualDigits(activity, "000000");
         assertTrue(AdminSession.isActive());
         assertTrue(prefs.needsPasswordSetup());
@@ -202,13 +205,9 @@ public class RemoteAuthTest {
     public void cooldownDisablesVirtualKeysAndHardwareCannotBypassItThenInputRecovers() {
         prefs.setPassword("135790");
         AdminAuthActivity activity = startAuth();
-        enterNavigation(activity);
         virtualDigits(activity, "111111111111111111");
         assertEquals(3, prefs.getFailCount());
         assertTrue(prefs.lockoutRemainingSeconds() > 0);
-        Button original = activity.findViewById(R.id.keypad_container).findViewWithTag("key_1");
-        assertFalse(original.isEnabled());
-        original.performClick();
         digits(activity, "135790");
         press(activity, KeyEvent.KEYCODE_ENTER);
         assertFalse(AdminSession.isActive());
@@ -217,20 +216,19 @@ public class RemoteAuthTest {
         assertEquals("", ((TextView) activity.findViewById(R.id.lock_input)).getText().toString());
         prefs.clearFailures();
         ShadowLooper.idleMainLooper(1, java.util.concurrent.TimeUnit.SECONDS);
-        assertSame(original, activity.findViewById(R.id.keypad_container).findViewWithTag("key_1"));
-        assertTrue(original.isEnabled());
         digits(activity, "135790");
         assertTrue(AdminSession.isActive());
         assertTrue(activity.isFinishing());
     }
 
     @Test
-    public void selectWithoutNavigationIsPairedAndDoesNotAppendOrRepeat() {
+    public void okWithAPartialPinReportsTheLengthAndDoesNotCountAFailure() {
         prefs.setPassword("135790");
         AdminAuthActivity activity = startAuth();
         digits(activity, "13");
         press(activity, KeyEvent.KEYCODE_BUTTON_A);
-        assertEquals("●●", ((TextView) activity.findViewById(R.id.lock_input)).getText().toString());
+        assertFalse(AdminSession.isActive());
+        assertFalse(activity.isFinishing());
         assertEquals(0, prefs.getFailCount());
         assertTrue(((TextView) activity.findViewById(R.id.lock_prompt)).getText().toString()
                 .contains("请输入 6 位"));
@@ -275,11 +273,7 @@ public class RemoteAuthTest {
     }
 
     private void virtualDigits(AdminAuthActivity activity, String value) {
-        for (char digit : value.toCharArray()) {
-            View key = activity.findViewById(R.id.keypad_container).findViewWithTag("key_" + digit);
-            assertTrue(key.requestFocus());
-            press(activity, KeyEvent.KEYCODE_DPAD_CENTER);
-        }
+        digits(activity, value);
     }
 
     private void focusDialog(String suffix) {
