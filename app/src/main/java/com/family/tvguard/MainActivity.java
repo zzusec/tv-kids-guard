@@ -665,7 +665,8 @@ public class MainActivity extends Activity {
             warning.append("无障碍未启用，设置入口不受保护。\n");
         }
         if (!DeviceProtection.isDeviceOwner(this)) {
-            warning.append("普通防护不能阻止卸载和强停。\n");
+            warning.append("当前为普通防护：设置页与卸载入口需家长密码，")
+                    .append("但系统仍允许强制停止。\n");
         }
         if (!GuardService.lastFailure().isEmpty()) {
             warning.append(GuardService.lastFailure()).append('\n');

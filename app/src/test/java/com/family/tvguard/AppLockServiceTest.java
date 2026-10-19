@@ -104,6 +104,18 @@ public class AppLockServiceTest {
     }
 
     @Test
+    public void knownTvSettingsAndInstallerPackagesAreGatedWithoutAnIntent() {
+        // Android TV builds often expose these screens without advertising the phone intents.
+        for (String pkg : new String[]{"com.android.tv.settings", "com.android.settings",
+                "com.google.android.tv.settings", "com.android.packageinstaller",
+                "com.google.android.packageinstaller", "com.android.permissioncontroller",
+                "com.google.android.permissioncontroller"}) {
+            window(pkg);
+            assertGateStarted();
+        }
+    }
+
+    @Test
     public void disabledProtectionDoesNotBlockSettings() {
         register(new Intent(Settings.ACTION_SETTINGS), "vendor.settings");
         prefs.setProtectionEnabled(false);

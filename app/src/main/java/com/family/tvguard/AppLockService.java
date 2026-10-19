@@ -31,6 +31,17 @@ public class AppLockService extends AccessibilityService {
     private static final String TAG = "TvGuard";
     private static final String SYSTEM_UI = "com.android.systemui";
     private static final long SHORTCUT_WINDOW_MILLIS = 2000L;
+    /** Settings, package installer and app-info surfaces that can switch the guard off. */
+    private static final String[] KNOWN_TV_SETTINGS = {
+            "com.android.tv.settings",
+            "com.android.settings",
+            "com.google.android.tv.settings",
+            "com.android.packageinstaller",
+            "com.google.android.packageinstaller",
+            "com.android.permissioncontroller",
+            "com.google.android.permissioncontroller",
+            "com.android.documentsui",
+    };
 
     private long firstZeroElapsed;
     private String foregroundPackage = "";
@@ -42,7 +53,7 @@ public class AppLockService extends AccessibilityService {
         @Override
         public void run() {
             enforceForeground();
-            handler.postDelayed(this, 500L);
+            handler.postDelayed(this, 250L);
         }
     };
 
@@ -107,11 +118,17 @@ public class AppLockService extends AccessibilityService {
             collectSettingsPackage(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, self));
             collectSettingsPackage(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
             collectSettingsPackage(new Intent(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS));
+            collectSettingsPackage(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS));
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 collectSettingsPackage(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, self));
             }
             collectSettingsPackage(new Intent(Intent.ACTION_UNINSTALL_PACKAGE, self));
             collectSettingsPackage(new Intent(Intent.ACTION_DELETE, self));
+            // Android TV builds often route these screens through their own settings package
+            // without advertising the phone intents above, so cover the known TV surfaces too.
+            for (String known : KNOWN_TV_SETTINGS) {
+                settingsPackages.add(known);
+            }
         }
         return settingsPackages.contains(pkg);
     }

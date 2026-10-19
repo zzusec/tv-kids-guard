@@ -367,6 +367,8 @@ final class DeviceProtection {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
                 result.append("（旧版 Android 下影响所有应用）");
             }
+        } else {
+            result.append("\n防卸载/强停：未开启（电视上有账号时系统不允许）");
         }
         String operation = "查询当前锁定模式";
         try {
