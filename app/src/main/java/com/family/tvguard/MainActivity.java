@@ -125,14 +125,14 @@ public class MainActivity extends Activity {
     private void createActionButtons() {
         LinearLayout menu = findViewById(R.id.menu_actions);
         String[][] actions = {
-                {"00", "关闭面板", "仅退出此页，防护状态不变"},
-                {"11", "改密码", "需再次验证家长密码"},
-                {"12", "修改每日时长", "调整每天的观看额度"},
-                {"13", "检查更新", "获取并安装最新版本"},
-                {"22", "临时加时长", "只加今天，不改每日额度"},
-                {"33", "立即锁定", "立即结束本次观看"},
-                {"44", "关闭防护", "停止管控，保留时长和密码"},
-                {"99", "启用防护", "恢复已保存的管控规则"}
+                {"00", "关闭面板"},
+                {"11", "改密码"},
+                {"12", "修改每日时长"},
+                {"13", "检查更新"},
+                {"22", "临时加时长"},
+                {"33", "立即锁定"},
+                {"44", "关闭防护"},
+                {"99", "启用防护"}
         };
         // Keep real Buttons and the established grid so DPAD and shortcuts share one action path.
         for (int index = 0; index < actions.length; index += 2) {
@@ -143,7 +143,7 @@ public class MainActivity extends Activity {
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             for (int column = 0; column < 2 && index + column < actions.length; column++) {
                 String[] action = actions[index + column];
-                Button button = actionButton(action[0], action[1], action[2]);
+                Button button = actionButton(action[0], action[1]);
                 LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                         0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
                 int gap = Math.round(10 * getResources().getDisplayMetrics().density);
@@ -155,11 +155,11 @@ public class MainActivity extends Activity {
         }
     }
 
-    private Button actionButton(String code, String label, String detail) {
+    private Button actionButton(String code, String label) {
         Button button = new Button(this);
         button.setId(View.generateViewId());
         button.setTag("action_" + code);
-        RemoteKeypad.styleButton(button, code, label, detail);
+        RemoteKeypad.styleButton(button, code, label);
         button.setOnClickListener(view -> executeAction(code));
         actionButtons.put(code, button);
         return button;

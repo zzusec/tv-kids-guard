@@ -165,7 +165,7 @@ public class MainActivitySettingsTest {
     public void temporaryBonusLabelAndDialogExplainThatItOnlyAppliesToday() {
         MainActivity activity = startPanel(true);
         Button button = activity.findViewById(android.R.id.content).findViewWithTag("action_22");
-        assertEquals("22 临时加时长\n只加今天，不改每日额度", button.getText().toString());
+        assertEquals("22 临时加时长", button.getText().toString());
 
         enterDigits(activity, "22");
         PinDialog dialog = latestPinDialog();

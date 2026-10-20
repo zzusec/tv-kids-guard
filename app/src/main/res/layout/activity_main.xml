@@ -74,9 +74,13 @@
                         android:layout_height="wrap_content"
                         android:background="@drawable/parent_card_bg"
                         android:orientation="vertical"
-                        android:padding="18dp">
+                        android:paddingStart="18dp"
+                        android:paddingTop="0dp"
+                        android:paddingEnd="18dp"
+                        android:paddingBottom="18dp">
 
                         <TextView
+                            android:id="@+id/status_heading"
                             style="@style/PanelText.Heading"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
@@ -193,6 +197,7 @@
                     android:orientation="vertical">
 
                     <TextView
+                        android:id="@+id/menu_heading"
                         style="@style/PanelText.Heading"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"

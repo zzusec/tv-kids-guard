@@ -140,7 +140,7 @@ public class MainActivityUpdateTest {
             if (action.isShown() && "action_13".equals(action.getTag())) {
                 updateEntries++;
                 assertTrue(action.isFocusable());
-                assertEquals("13 检查更新\n获取并安装最新版本", ((Button) action).getText().toString());
+                assertEquals("13 检查更新", ((Button) action).getText().toString());
             }
         }
         assertEquals(1, updateEntries);

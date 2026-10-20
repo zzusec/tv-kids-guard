@@ -72,7 +72,7 @@ public class ParentPanelVisualTest {
     }
 
     @Test
-    public void enabledPanelHasReadableFocusedTitleShortcutAndExplanation() throws Exception {
+    public void enabledPanelHasReadableFocusedTitleAndShortcut() throws Exception {
         start(true);
         Button button = activity.findViewById(android.R.id.content).findViewWithTag("action_12");
         assertTrue(button.hasFocus());
@@ -85,6 +85,14 @@ public class ParentPanelVisualTest {
             assertEquals("Focused text spans must not retain dark normal-state colors", Color.WHITE, paint.getColor());
         }
         capture(activity.getWindow().getDecorView(), "tv-enabled");
+    }
+
+    @Test
+    public void overviewHeadingAlignsWithShortcutHeading() {
+        start(true);
+        TextView overview = activity.findViewById(R.id.status_heading);
+        TextView shortcuts = activity.findViewById(R.id.menu_heading);
+        assertEquals("Overview title must align with the shortcut title", shortcuts.getTop(), overview.getTop());
     }
 
     @Test

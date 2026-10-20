@@ -253,22 +253,23 @@ public class MainActivityRemoteTest {
     }
 
     @Test
-    public void televisionActionsShowTheirCompleteTitleAndExplanation() {
+    public void televisionActionsShowOnlyTheirShortcutAndTitle() {
         startPanel(true);
         for (String code : new String[] {"00", "11", "12", "13", "22", "33", "44"}) {
             Button button = action(code);
             assertTrue(button.getText().toString().startsWith(code + " "));
-            assertTrue("Every action explains its effect", button.getText().toString().contains("\n"));
+            assertFalse("Action details should stay out of the compact panel",
+                    button.getText().toString().contains("\n"));
             assertNotNull(button.getLayout());
-            assertEquals("TV actions fit in two lines", 2, button.getLayout().getLineCount());
+            assertEquals("TV actions fit on one line", 1, button.getLayout().getLineCount());
             assertTrue(button.getLayout().getHeight() <= button.getHeight()
                     - button.getCompoundPaddingTop() - button.getCompoundPaddingBottom());
             Rect visible = new Rect();
             assertTrue(button.getGlobalVisibleRect(visible));
             assertEquals("All actions fit on the TV without scrolling", button.getHeight(), visible.height());
         }
-        assertTrue(action("00").getText().toString().contains("防护状态不变"));
-        assertTrue(action("44").getText().toString().contains("停止管控"));
+        assertEquals("00 关闭面板", action("00").getText().toString());
+        assertEquals("44 关闭防护", action("44").getText().toString());
     }
 
     @Test
