@@ -12,6 +12,7 @@ import android.text.style.TextAppearanceSpan;
 import android.view.KeyEvent;
 import android.view.View;
 import android.widget.Button;
+import android.widget.TextView;
 
 import org.junit.After;
 import org.junit.Before;
@@ -21,6 +22,7 @@ import org.robolectric.Robolectric;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.android.controller.ActivityController;
+import org.robolectric.android.controller.ServiceController;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.GraphicsMode;
 import org.robolectric.annotation.LooperMode;
@@ -101,6 +103,32 @@ public class ParentPanelVisualTest {
             assertEquals("Summary, permission notices and version must fit together on TV", view.getHeight(), visible.height());
         }
         capture(activity.getWindow().getDecorView(), "tv-unlimited");
+    }
+
+    @Test
+    public void thirtyMinuteQuotaShowsTheNativeLockScreen() throws Exception {
+        AdminSession.revoke();
+        prefs.setUsedSeconds(30 * 60L);
+        assertEquals(30, prefs.getDailyLimitMinutes());
+        assertEquals(0L, prefs.remainingSeconds());
+        ServiceController<GuardService> guard = Robolectric.buildService(GuardService.class).create();
+        ActivityController<LockActivity> lock = null;
+        try {
+            assertTrue(guard.get().isLocked());
+            lock = Robolectric.buildActivity(LockActivity.class).create().start().resume().visible()
+                    .windowFocusChanged(true);
+            ShadowLooper.idleMainLooper();
+            LockActivity screen = lock.get();
+            assertEquals("今日电视时长已用完", ((TextView) screen.findViewById(R.id.lock_title)).getText().toString());
+            assertEquals("输入 6 位家长密码解除限时", ((TextView) screen.findViewById(R.id.lock_prompt)).getText().toString());
+            assertEquals("", ((TextView) screen.findViewById(R.id.lock_input)).getText().toString());
+            capture(screen.getWindow().getDecorView(), "tv-quota-used");
+        } finally {
+            if (lock != null) {
+                lock.pause().stop().destroy();
+            }
+            guard.destroy();
+        }
     }
 
     @Test

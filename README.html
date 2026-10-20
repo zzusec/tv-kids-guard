@@ -61,130 +61,53 @@
 <body>
 
 <h1>TV Kids Guard · 电视时长管控</h1>
-<p>面向 Android TV 和安卓电视盒子的本地儿童时长管理工具。家长用实体遥控器设置每日额度、临时加时和管理密码，到达额度后自动锁屏。</p>
-<p>不需要注册账号、手机配对或云端管理后台。日常计时、密码验证和规则保存在电视本地；检查与下载更新需要联网。</p>
-<p><a href="https://github.com/zzusec/tv-kids-guard/releases/latest/download/tv-kids-guard.apk">下载正式版 APK</a> · <a href="https://github.com/zzusec/tv-kids-guard/releases">版本与更新说明</a> · <a href="https://github.com/zzusec/tv-kids-guard/issues">反馈问题</a> · <a href="LICENSE">MIT 许可证</a></p>
-<h2>界面预览</h2>
-<p><img src="docs/images/parent-panel.png" alt="低亮度深灰家长管理面板，包含今日概览、时长设置和两位数字快捷操作"></p>
-<p>家长管理面板采用 <a href="https://github.com/htmlstreamofficial/preline">Preline</a> 启发的低亮度深灰设计，适合电视观看距离与方向键操作。上图为原生渲染预览，使用示例数据；展示了“今天不限时”、临时加时以及未授权时的提醒，不包含真实密码或设备信息。</p>
-<h2>主要功能</h2>
-<ul>
-  <li><strong>每日观看额度</strong>：默认 30 分钟，可设为 1–1440 分钟；当天用量按电视本地日期进入新一天后重置。</li>
-  <li><strong>统一亮屏计时</strong>：防护开启时，不依赖特定视频应用，屏幕开启且未锁定即累计时间；关屏和锁定期间暂停计时。</li>
-  <li><strong>到时锁定与倒计时</strong>：显示剩余时长，到达额度后进入锁屏；悬浮显示依赖对应系统权限。</li>
-  <li><strong>仅今天临时加时</strong>：每天累计最多增加 60 分钟，不修改每日额度，次日自动清零。</li>
-  <li><strong>家长密码与遥控操作</strong>：6 位数字密码、输入遮罩、输错冷却；仅使用遥控器实体数字键，没有屏幕数字键盘或系统软键盘。</li>
-  <li><strong>后台恢复与应用内更新</strong>：定期保存当天用量，支持开机恢复；通过家长面板检查更新，并验证升级包的包名、版本、SHA-256 和签名。</li>
-</ul>
-<p><strong>计时不是“识别视频播放时长”</strong>：防护开启时，停留在桌面、浏览设置或打开其他应用，只要屏幕开启且未锁定，也会计入用量。系统休眠、厂商后台限制等可能影响服务运行，安装后应在自己的电视上验证。</p>
-<h2>快速开始</h2>
-<h3>1. 确认设备与遥控器</h3>
-<ul>
-  <li>最低系统要求为 Android 5.0（API 21）；项目已在 Sony BRAVIA、Android 7.0（API 24）上使用和验证，其他厂商固件仍需自行确认兼容性。</li>
-  <li>遥控器需要提供 <strong>0–9 数字键、方向键、OK 和返回键</strong>。当前没有为不带数字键的精简遥控器提供屏幕键盘替代方案。</li>
-  <li>这是家长辅助工具，不是无法绕过的系统级管控方案；实际防护能力取决于电视固件、授权和应用是否持续运行。</li>
-</ul>
-<h3>2. 安装正式版</h3>
-<p>从 <a href="https://github.com/zzusec/tv-kids-guard/releases/latest">Releases</a> 下载 <code>tv-kids-guard.apk</code>，通过 U 盘、文件管理器或自己的 ADB 连接安装。按电视提示允许对应来源安装应用。</p>
-<p>已连接并授权 ADB 的用户也可以执行：</p>
-<pre><code>adb install -r tv-kids-guard.apk</code></pre>
-<p>更新时请直接覆盖安装，<strong>不要先卸载、清除应用数据或恢复出厂设置</strong>。包名为 <code>com.family.tvguard</code>；正式版需要保持同一签名才能覆盖升级。</p>
-<h3>3. 设置家长密码</h3>
-<p>首次安装，使用出厂密码 <code>000000</code> 完成验证，再按提示输入并确认新的 6 位家长密码。应用要求更换出厂密码后才能进入管理面板；后续进入使用自己的密码。</p>
-<p>密码只显示圆点，输入满 6 位自动提交；左方向键删除一位。请妥善保存密码，连续输错会触发冷却等待，不要反复猜测。</p>
-<h3>4. 检查权限并设置额度</h3>
-<p>在电视系统设置中按需要授权，回到家长面板确认提示，再用 <code>12 修改每日时长</code> 设置额度。不同电视的设置名称和入口可能不同。</p>
-<div class="table-scroll" tabindex="0"><table><thead><tr>
-<th scope="col">授权或设置</th>
-<th scope="col">作用</th>
-<th scope="col">注意事项</th>
-</tr></thead><tbody>
-<tr><td>显示在其他应用上层 / 悬浮窗</td><td>剩余时长提示与锁屏遮罩</td><td>未开启时面板会提示，相关显示能力会受影响</td></tr>
-<tr><td>无障碍服务</td><td>对设置、应用详情及卸载等相关入口触发家长验证</td><td>需要在系统中手动开启；不能保证覆盖所有厂商入口</td></tr>
-<tr><td>自启动 / 后台运行</td><td>帮助开机恢复并保持计时服务运行</td><td>部分厂商需单独放行，安装后验证关屏、开机和后台运行</td></tr>
-<tr><td>安装未知来源应用</td><td>安装 APK 和应用内升级</td><td>按系统提示授权；部分旧版电视使用全局开关</td></tr>
-<tr><td>通知权限（Android 13+）</td><td>计时服务通知</td><td>按系统提示授权</td></tr>
-</tbody></table></div>
-<p><strong>普通安装不等于系统级防卸载。</strong> 无障碍入口保护与设备所有者（Device Owner）策略是不同能力，具体边界见下文。</p>
-<h2>遥控器操作</h2>
-<h3>管理面板快捷码</h3>
-<p>进入家长面板后，可以直接输入两位数字，也可以用方向键选择按钮、按 OK 执行。不可用操作会隐藏，输入对应快捷码也不会执行。</p>
+<p>给安卓电视设置每天能看的时长。默认 30 分钟，用完自动锁屏，家长用遥控器管理。</p>
+<p><a href="https://github.com/zzusec/tv-kids-guard/releases/latest/download/tv-kids-guard.apk">下载 APK</a> · <a href="https://github.com/zzusec/tv-kids-guard/releases">版本记录</a> · <a href="https://github.com/zzusec/tv-kids-guard/issues">反馈问题</a></p>
+<h2>截图</h2>
+<h3>家长面板</h3>
+<p><img src="docs/images/parent-panel.png" alt="家长面板：查看今日用量、设置时长和临时加时"></p>
+<h3>每天 30 分钟用完后</h3>
+<p><img src="docs/images/quota-used.png" alt="到时锁屏：今日电视时长已用完，提示输入家长密码"></p>
+<p>两图均为应用原生渲染预览，使用示例数据。</p>
+<h2>安装</h2>
+<p>需要 Android 5.0 及以上，遥控器须有数字键、方向键、OK 和返回键。</p>
+<ol>
+  <li>下载 APK，通过 U 盘或 ADB 安装。</li>
+  <li>首次输入出厂密码 <code>000000</code>，再设置自己的 6 位家长密码。</li>
+  <li>开启悬浮窗、无障碍服务，并允许应用在后台运行。</li>
+</ol>
+<h2>遥控操作</h2>
+<p>进入家长面板后，直接输入两位快捷码，或用方向键选择、按 OK 执行。</p>
 <div class="table-scroll" tabindex="0"><table><thead><tr>
 <th scope="col">快捷码</th>
 <th scope="col">操作</th>
-<th scope="col">效果</th>
+<th scope="col">说明</th>
 </tr></thead><tbody>
-<tr><td><code>00</code></td><td>关闭面板</td><td>只退出管理页、结束家长会话，不改变防护开关和既有规则</td></tr>
-<tr><td><code>11</code></td><td>改密码</td><td>再次验证家长密码后，设置并确认新密码</td></tr>
-<tr><td><code>12</code></td><td>修改每日时长</td><td>修改每天的观看额度，输入分钟数后按 OK 保存</td></tr>
-<tr><td><code>13</code></td><td>检查更新</td><td>检查、下载并安装正式版更新，按系统提示授权或确认</td></tr>
-<tr><td><code>22</code></td><td>临时加时长</td><td>只增加今天的时长，不改变每日额度；每天累计上限 60 分钟</td></tr>
-<tr><td><code>33</code></td><td>立即锁定</td><td>立即结束本次观看，并取消“今天不限时”状态</td></tr>
-<tr><td><code>44</code></td><td>关闭防护</td><td>确认后停止管控，并尝试解除应用的设备管理策略，保留密码和时长设置</td></tr>
-<tr><td><code>99</code></td><td>启用防护</td><td>重新启用时长管控；只在防护关闭时显示</td></tr>
+<tr><td><code>00</code></td><td>关闭面板</td><td>只退出页面，不改变防护状态</td></tr>
+<tr><td><code>11</code></td><td>改密码</td><td>再次验证后设置新密码</td></tr>
+<tr><td><code>12</code></td><td>修改每日时长</td><td>每天 1–1440 分钟</td></tr>
+<tr><td><code>13</code></td><td>检查更新</td><td>下载并安装正式版更新</td></tr>
+<tr><td><code>22</code></td><td>临时加时长</td><td>只加今天，每天累计最多 60 分钟</td></tr>
+<tr><td><code>33</code></td><td>立即锁定</td><td>马上锁屏，取消“今天不限时”</td></tr>
+<tr><td><code>44</code></td><td>关闭防护</td><td>确认后停止管控，保留时长和密码</td></tr>
+<tr><td><code>99</code></td><td>启用防护</td><td>恢复普通管控，仅停用时显示</td></tr>
 </tbody></table></div>
-<h3>密码与时长输入</h3>
+<p>密码满 6 位自动提交，左方向键删除；时长输入后按 OK 保存。</p>
+<p>锁屏时，按 OK 验证后进入后台；直接输入家长密码则<strong>今天不限时</strong>，次日恢复。修改每日时长或临时加时也会恢复限时，但不会清空今天已看时长。</p>
+<h2>注意</h2>
 <ul>
-  <li><strong>密码</strong>：用数字键输入，满 6 位自动验证；左方向键删除一位。</li>
-  <li><strong>时长</strong>：输入分钟数，按 OK 确认；仅输入数字不会保存，返回键取消。</li>
-  <li><strong>返回键</strong>：在管理面板中退出面板，在输入弹窗中取消；在到时锁屏中不会解除管控。</li>
-  <li><strong>音量与电源键</strong>：仍交由电视系统处理，不被家长面板或锁屏当成密码输入。</li>
+  <li>防护开启时按亮屏时间计时，不是视频播放时长；关屏和锁定时暂停，次日清零。</li>
+  <li>更新请覆盖安装，不要卸载或清除数据。Actions 中的 <code>community-debug</code> 包不能覆盖正式版。</li>
+  <li>普通安装不能保证防卸载、强停，Device Owner 取决于电视支持。关闭防护会尝试解除设备管理身份，再启用不会自动恢复该身份。</li>
+  <li>数据保存在电视本地，无需注册账号；更新需要连接 GitHub。不同厂商的后台限制可能影响计时，请安装后验证。</li>
 </ul>
-<h3>到时锁屏：进入后台与今天不限时</h3>
-<p>锁屏没有输入数字时，按 <strong>OK</strong> 打开家长验证，验证后进入管理面板。<strong>进入后台本身不会让今天不限时</strong>；如果只想增加少量时间，请进入后台后使用 <code>22 临时加时长</code>。</p>
-<p>如果在到时锁屏上直接输入已设置的家长密码，则会解除锁定，并让<strong>今天剩余时间不限时</strong>。这不会修改每日额度，也不等于关闭防护；次日自动恢复按每日额度管控，需要提前结束观看时可使用 <code>33 立即锁定</code>。</p>
-<p>修改每日时长或临时加时也会退出“今天不限时”，恢复按额度管控；这两项操作都不会清空今天已用时长。</p>
-<h2>更新与卸载</h2>
-<h3>更新</h3>
-<p>在家长面板使用 <code>13 检查更新</code>，或从 Releases 下载正式 APK 覆盖安装。应用支持后台安排检查与下载，安装过程仍需在家长授权下按系统提示完成，不应把它理解为绕过系统安装限制的静默升级。</p>
-<p>升级包必须满足包名、版本、大小、SHA-256 和已安装应用签名等校验。网络无法访问 GitHub 或下载失败时，可以改用手动下载与覆盖安装；不要为了升级成功先清除数据。</p>
-<p>Releases 同时提供 <code>update.json</code> 与 <code>SHA256SUMS</code>。需要手动校验时，将同一版本的 <code>tv-kids-guard.apk</code>、<code>update.json</code> 和 <code>SHA256SUMS</code> 三个文件下载到同一目录，再进入该目录执行：</p>
-<pre><code># macOS
-shasum -a 256 -c SHA256SUMS
-
-# Linux
-sha256sum -c SHA256SUMS</code></pre>
-<p>GitHub Actions 的 <code>community-debug</code> 构建是开发测试包，<strong>不是正式 OTA 包</strong>。其签名与官方正式版不同，不能直接覆盖正式安装；开发测试请使用单独的测试设备或模拟器。</p>
-<h3>关闭防护与卸载</h3>
-<p>先在家长面板使用 <code>44 关闭防护</code>，阅读并确认结果，再通过系统正常卸载。如果提示“解除未完成”，应保留当前配置核查原因，不要把它当成已经成功解除。</p>
-<p>关闭防护不会清除密码和额度。重新使用 <code>99 启用防护</code> 可以恢复普通时长管控，但<strong>不会自动重新授予已解除的 Device Owner 身份</strong>。</p>
-<h2>防护边界与常见问题</h2>
-<h3>能完全防止卸载、强停和清除数据吗？</h3>
-<p>不能对所有电视做此承诺。普通安装依靠应用持续运行、悬浮显示和无障碍入口保护；只有在设备确实支持并已成功配置 Device Owner 时，才能应用相应的系统管理限制，且不同 Android 版本与厂商固件仍有差异。</p>
-<p>仓库提供只读预检工具，供已建立自有 ADB 连接的家长或开发者核查能力：</p>
-<pre><code>bash tools/device_precheck.sh &quot;&lt;ADB_SERIAL&gt;&quot;</code></pre>
-<p>该脚本不会安装应用、设置 Owner、删除账户或重置电视。<strong>支持设备管理不代表一定可以开通 Owner，不要为试错恢复出厂。</strong> 本工具不能保证抵御具有 ADB、Root、恢复出厂或固件修改权限的人。</p>
-<h3>为什么超过每日额度仍然能看？</h3>
-<p>先查看面板是否显示“今天不限时”或“防护已关闭”，再检查实际运行和权限提示。今天不限时可能来自在到时锁屏上输入家长密码，不是修改了每日额度。</p>
-<h3>为什么进入后台还要输入密码？</h3>
-<p>关闭面板或离开家长界面后，家长会话会结束。重新验证是正常的保护流程，不代表密码或时长设置丢失。</p>
-<h3>会收集观看记录或上传家长密码吗？</h3>
-<p>当前应用将密码哈希、额度、用量等保存在本机，不提供账号、云端同步或观看记录上传接口。更新检查与下载会访问 GitHub；无障碍服务用于判断受保护的系统设置入口。请勿在 Issue、截图或日志中公开自己的密码、签名私钥和调试凭据。</p>
-<h2>开发与构建</h2>
-<p>环境要求：JDK 17、Android SDK 35、build-tools 35.0.0、Python 3。项目自带 Gradle Wrapper；通过 <code>ANDROID_HOME</code> 或 <code>local.properties</code> 的 <code>sdk.dir</code> 指定 SDK。</p>
-<pre><code># Android 单元测试与开发包
-./gradlew testDebugUnitTest assembleDebug
-
-# 发布工具测试，不需要正式签名私钥
+<h2>开发</h2>
+<p>使用 JDK 17、Android SDK 35 和 Python 3。</p>
+<pre><code>./gradlew testDebugUnitTest assembleDebug
 python3 -I -B -m unittest discover -s tools -p &#x27;test_*.py&#x27; -v
-
-# 重新生成同目录的独立 HTML 说明
 python3 -I -B tools/md_to_html.py</code></pre>
-<p>开发包位于 <code>app/build/outputs/apk/debug/app-debug.apk</code>。没有私有正式签名配置时，开发构建使用开发签名；正式包的构建、证书校验和发布步骤见 <a href="docs/开发说明.md">开发与发布说明</a>。不要将签名私钥或密码提交到仓库。</p>
-<p>测试覆盖密码与会话、遥控器数字键和 DPAD、临时加时、更新校验，以及 720p / 1080p / 4K、窄屏滚动与放大字号等布局场景。自动化布局与原生渲染预览不能代替所有厂商电视上的实机验收。</p>
-<p>项目结构与设计说明：</p>
-<ul>
-  <li><a href="PRODUCT.md">产品与交互约束</a></li>
-  <li><a href="DESIGN.md">原生视觉规范</a></li>
-  <li><a href=".github/workflows/build.yml">持续集成配置</a></li>
-  <li><code>app/src/main/java/com/family/tvguard/</code>：计时、防护、家长验证与更新逻辑。</li>
-  <li><code>app/src/main/res/</code>：原生布局、主题与图形资源。</li>
-  <li><code>app/src/test/</code>：Android 与遥控器行为测试。</li>
-  <li><code>tools/</code>：构建辅助、发布与设备预检脚本；<code>tools/tvguard/</code> 是独立的 ADB 脚本方案，不是 APK 的常规使用入口。</li>
-</ul>
-<p>反馈问题时，请提供电视型号、Android 版本、应用版本、复现步骤和不含敏感信息的截图。提交代码前请运行相关测试。</p>
-<h2>许可证</h2>
-<p>本项目采用 <a href="LICENSE">MIT License</a>。Preline 仅作为界面视觉参考，应用使用 Android 原生控件实现，没有引入其网页运行时或品牌资产。</p>
+<p>详见 <a href="docs/开发说明.md">开发与发布说明</a>、<a href="PRODUCT.md">产品说明</a> 和 <a href="DESIGN.md">设计规范</a>。</p>
+<p><a href="LICENSE">MIT License</a>。管理面板参考 <a href="https://github.com/htmlstreamofficial/preline">Preline</a>，使用 Android 原生控件实现。</p>
 
 </body>
 </html>
