@@ -124,7 +124,7 @@ public class MainActivity extends Activity {
     private void createActionButtons() {
         LinearLayout menu = findViewById(R.id.menu_actions);
         String[][] actions = {
-                {"00", "关闭面板"}, {"11", "改密码"}, {"12", "每日时长"}, {"13", "检查更新"},
+                {"00", "关闭面板"}, {"11", "改密码"}, {"12", "修改每日时长"}, {"13", "检查更新"},
                 {"22", "加时长"}, {"33", "立即锁定"}, {"44", "关闭防护"}, {"99", "启用防护"}
         };
         // Two columns keep all eight shortcuts on one television screen; the keypad-only rows
