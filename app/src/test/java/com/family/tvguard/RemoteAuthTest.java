@@ -107,6 +107,49 @@ public class RemoteAuthTest {
     }
 
     @Test
+    public void parentGateDoesNotClaimQuotaIsExhaustedWhileProtectionIsOff() {
+        prefs.setPassword("135790");
+        prefs.setUsedSeconds(Prefs.DEFAULT_LIMIT_MINUTES * 60L);
+        prefs.setLocked(true);
+        prefs.setProtectionEnabled(false);
+        AdminAuthActivity activity = startAuth();
+
+        assertEquals("家长验证", ((TextView) activity.findViewById(R.id.lock_title))
+                .getText().toString());
+        assertFalse(prefs.isProtectionEnabled());
+    }
+
+    @Test
+    public void parentGateOnlyShowsExhaustedTitleWhenTheQuotaLockIsActive() {
+        prefs.setPassword("135790");
+        AdminAuthActivity activity = startAuth();
+        TextView title = activity.findViewById(R.id.lock_title);
+        assertEquals("家长验证", title.getText().toString());
+
+        prefs.setUsedSeconds(Prefs.DEFAULT_LIMIT_MINUTES * 60L);
+        ShadowLooper.idleMainLooper(1, java.util.concurrent.TimeUnit.SECONDS);
+
+        assertEquals("今日电视时长已用完", title.getText().toString());
+    }
+
+    @Test
+    public void parentGateKeepsRepeatedPhysicalDigitsAcrossRefreshTicks() {
+        prefs.setPassword("135790");
+        AdminAuthActivity activity = startAuth();
+
+        for (int i = 1; i <= 5; i++) {
+            press(activity, KeyEvent.KEYCODE_1);
+            ShadowLooper.idleMainLooper(2, java.util.concurrent.TimeUnit.SECONDS);
+            assertEquals("●".repeat(i), ((TextView) activity.findViewById(R.id.lock_input))
+                    .getText().toString());
+        }
+        press(activity, KeyEvent.KEYCODE_DPAD_LEFT);
+        assertEquals("●●●●", ((TextView) activity.findViewById(R.id.lock_input))
+                .getText().toString());
+        assertEquals(0, prefs.getFailCount());
+    }
+
+    @Test
     public void hardwareNumbersStillSubmitPlaintextLimitOnOkDownWithoutVirtualDigit() {
         List<String> values = new ArrayList<>();
         showDialog(false, 4, values);

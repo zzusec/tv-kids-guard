@@ -21,7 +21,7 @@ import org.robolectric.shadows.ShadowLooper;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-/** Repeated OK presses on the same focused key must keep appending digits. */
+/** Separate presses of the same remote digit must survive UI and service refreshes. */
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = {24, 33}, qualifiers = "w960dp-h540dp-land")
 @LooperMode(LooperMode.Mode.PAUSED)
@@ -36,7 +36,7 @@ public class LockRepeatedDigitTest {
         Application context = RuntimeEnvironment.getApplication();
         context.getSharedPreferences("tvguard_prefs", Context.MODE_PRIVATE).edit().clear().commit();
         Prefs prefs = new Prefs(context);
-        prefs.setPassword("774109");
+        prefs.setPassword("135790");
         prefs.setUsedSeconds(1800L);
         prefs.setLocked(true);
         AdminSession.revoke();
@@ -68,6 +68,7 @@ public class LockRepeatedDigitTest {
     public void repeatedPhysicalDigitsKeepAppending() {
         for (int i = 1; i <= 5; i++) {
             press(KeyEvent.KEYCODE_1);
+            ShadowLooper.idleMainLooper(2, java.util.concurrent.TimeUnit.SECONDS);
             assertEquals("after press " + i, repeat('1', i), service.lockInput());
         }
     }

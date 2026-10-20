@@ -29,7 +29,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="22dp"
         android:gravity="center"
-        android:text="今日电视时长已用完"
+        android:text="家长验证"
         android:textSize="38sp" />
 
     <TextView

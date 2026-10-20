@@ -106,6 +106,9 @@ public class PanelHandoverTest {
         tick.invoke(service);
         drainStartedActivities();
         assertFalse("锁屏不得在已授权面板上重新弹出", activityStarted(LockActivity.class));
+        ShadowLooper.idleMainLooper(15, TimeUnit.SECONDS);
+        assertTrue("面板持续可见时不得立即撤销家长授权", MainActivity.isAuthorizedVisible());
+        assertFalse("面板持续可见时锁屏不得抢回前台", activityStarted(LockActivity.class));
         panelController.pause().stop().destroy();
     }
 
