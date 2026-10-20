@@ -109,7 +109,8 @@ public class AppLockServiceTest {
         for (String pkg : new String[]{"com.android.tv.settings", "com.android.settings",
                 "com.google.android.tv.settings", "com.android.packageinstaller",
                 "com.google.android.packageinstaller", "com.android.permissioncontroller",
-                "com.google.android.permissioncontroller"}) {
+                "com.google.android.permissioncontroller",
+                "com.xiaomi.mitv.settings", "com.miui.packageinstaller"}) {
             window(pkg);
             assertGateStarted();
         }

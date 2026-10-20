@@ -524,7 +524,13 @@ public class GuardService extends Service {
             countdownText.setTypeface(Typeface.DEFAULT_BOLD);
             countdownText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
             countdownText.setShadowLayer(6f, 0f, 0f, Color.BLACK);
-            countdownText.setPadding(dp(14), dp(8), dp(14), dp(8));
+            countdownText.setPadding(dp(14), dp(6), dp(14), dp(6));
+            // A soft dark pill keeps the clock readable over bright video without hiding it.
+            android.graphics.drawable.GradientDrawable pill =
+                    new android.graphics.drawable.GradientDrawable();
+            pill.setColor(Color.parseColor("#66000000"));
+            pill.setCornerRadius(dp(20));
+            countdownText.setBackground(pill);
         }
         if (countdownAttached) {
             return;
@@ -539,9 +545,10 @@ public class GuardService extends Service {
                         | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | Gravity.END;
-        // Sits below the TV's own clock in the status bar, otherwise the two overlap.
+        // Higher than before so it clears the video card, but still below the top edge where
+        // the television and the player draw their own clock and logo.
         lp.x = dp(24);
-        lp.y = dp(56);
+        lp.y = dp(40);
         try {
             wm.addView(countdownText, lp);
             countdownAttached = true;

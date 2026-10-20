@@ -41,6 +41,11 @@ public class AppLockService extends AccessibilityService {
             "com.android.permissioncontroller",
             "com.google.android.permissioncontroller",
             "com.android.documentsui",
+            // Xiaomi TV (MIUI TV / PatchWall) keeps settings and app management in its own
+            // packages instead of the AOSP ones.
+            "com.xiaomi.mitv.settings",
+            "com.miui.packageinstaller",
+            "com.lbe.security.miui",
     };
 
     private long firstZeroElapsed;
