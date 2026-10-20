@@ -93,6 +93,12 @@ public class ParentPanelVisualTest {
         TextView overview = activity.findViewById(R.id.status_heading);
         TextView shortcuts = activity.findViewById(R.id.menu_heading);
         assertEquals("Overview title must align with the shortcut title", shortcuts.getTop(), overview.getTop());
+        View card = activity.findViewById(R.id.status_card);
+        assertTrue("Overview title needs breathing room below the card border",
+                overview.getTop() - card.getTop() >= Math.round(10 * activity.getResources()
+                        .getDisplayMetrics().density));
+        View hint = activity.findViewById(R.id.menu_hint);
+        assertTrue("Shortcut hint must stay on the heading row", hint.getTop() < shortcuts.getBottom());
     }
 
     @Test

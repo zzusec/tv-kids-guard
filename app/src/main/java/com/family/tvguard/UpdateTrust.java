@@ -119,8 +119,9 @@ final class UpdateTrust {
     static byte[] pemBytes() {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         for (String block : PEM) {
-            out.writeBytes(("-----BEGIN CERTIFICATE-----\n" + block
-                    + "\n-----END CERTIFICATE-----\n").getBytes(StandardCharsets.US_ASCII));
+            byte[] pem = ("-----BEGIN CERTIFICATE-----\n" + block
+                    + "\n-----END CERTIFICATE-----\n").getBytes(StandardCharsets.US_ASCII);
+            out.write(pem, 0, pem.length);
         }
         return out.toByteArray();
     }

@@ -8,6 +8,7 @@ import org.robolectric.annotation.Config;
 import java.security.KeyStore;
 import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
+import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 
 import static org.junit.Assert.assertEquals;
@@ -21,6 +22,9 @@ public class UpdateTrustTest {
 
     @Test
     public void embeddedRootsAreSelfSignedCertificates() throws Exception {
+        String pem = new String(UpdateTrust.pemBytes(), StandardCharsets.US_ASCII);
+        assertEquals(2, pem.split("-----BEGIN CERTIFICATE-----", -1).length - 1);
+        assertTrue(pem.endsWith("-----END CERTIFICATE-----\n"));
         Collection<? extends Certificate> roots = UpdateTrust.embedded();
         assertEquals(2, roots.size());
         for (Certificate certificate : roots) {
