@@ -3,6 +3,7 @@
 import html
 import re
 import pathlib
+from urllib.parse import urlsplit
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC = ROOT / "README.md"
@@ -18,6 +19,12 @@ CSS = """  :root { color-scheme: light dark; }
   h2 { font-size: 1.25rem; margin: 2.4rem 0 .8rem; padding-bottom: .35rem; border-bottom: 1px solid #e5e8eb; }
   h3 { font-size: 1.05rem; margin: 1.6rem 0 .5rem; }
   p, li { color: #33383e; }
+  a { color: #2057ad; overflow-wrap: anywhere; }
+  img { display: block; max-width: 100%; height: auto; border-radius: 8px; }
+  .table-scroll { overflow-x: auto; margin: 1.2rem 0; }
+  table { width: 100%; border-collapse: collapse; text-align: left; font-size: .92em; }
+  th, td { min-width: 5rem; padding: .65rem .8rem; border: 1px solid #e5e8eb; vertical-align: top; }
+  th { background: #f6f8fa; }
   code {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: .88em; background: #f2f4f6; padding: .15em .4em; border-radius: 4px;
@@ -34,23 +41,64 @@ CSS = """  :root { color-scheme: light dark; }
     body { color: #e6e9ec; background: #14171a; }
     p, li { color: #c3c9d0; }
     strong { color: #fff; }
+    a { color: #9bbaff; }
+    th, td { border-color: #2a3037; }
+    th { background: #1b1f24; }
     h2 { border-color: #2a3037; }
     code { background: #23282e; color: #e6e9ec; }
     pre { background: #1b1f24; border-color: #2a3037; }
   }
   @media print {
-    body { max-width: none; padding: 0; }
-    pre { page-break-inside: avoid; }
-    h2 { page-break-after: avoid; }
+    :root { color-scheme: light; }
+    body { max-width: none; padding: 0; color: #000; background: #fff; }
+    p, li, strong, a { color: #000; }
+    code, pre, th { color: #000; background: #f6f8fa; }
+    h2, th, td, pre { border-color: #ccc; }
+    .table-scroll { overflow: visible; }
+    th, td { min-width: 0; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+    pre, img, tr { page-break-inside: avoid; }
+    h2, h3 { page-break-after: avoid; }
   }"""
+
+INLINE = re.compile(r"`([^`\n]+)`|\*\*(.+?)\*\*|(!?)\[([^\]\n]+)\]\(([^)\s]+)\)")
+
+
+def safe_url(url):
+    if "\\" in url or any(ord(char) < 32 for char in url):
+        return False
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return False
+    return (parsed.scheme == "https" and bool(parsed.netloc)) or (
+        not parsed.scheme and not url.startswith("/")
+    )
 
 
 def inline(text):
-    text = html.escape(text, quote=False)
-    text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
-    text = re.sub(r"`(.+?)`", r"<code>\1</code>", text)
-    text = re.sub(r'\[([^\]]+)\]\((https://[^\s)"<>]+)\)', r'<a href="\2">\1</a>', text)
-    return text
+    out = []
+    position = 0
+    for match in INLINE.finditer(text):
+        out.append(html.escape(text[position:match.start()], quote=False))
+        code, bold, image, label, url = match.groups()
+        if code is not None:
+            out.append("<code>" + html.escape(code, quote=False) + "</code>")
+        elif bold is not None:
+            out.append("<strong>" + inline(bold) + "</strong>")
+        elif not safe_url(url):
+            out.append(html.escape(match.group(), quote=False))
+        elif image:
+            out.append(f'<img src="{html.escape(url)}" alt="{html.escape(label)}">')
+        else:
+            out.append(f'<a href="{html.escape(url)}">{inline(label)}</a>')
+        position = match.end()
+    out.append(html.escape(text[position:], quote=False))
+    return "".join(out)
+
+
+def table_cells(line):
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
 
 
 def render(md):
@@ -102,6 +150,22 @@ def render(md):
         if in_ol:
             out.append("</ol>")
             in_ol = False
+        if "|" in line and i + 1 < len(lines):
+            headers = table_cells(line)
+            separators = table_cells(lines[i + 1])
+            if len(headers) == len(separators) and all(re.fullmatch(r":?-{3,}:?", cell) for cell in separators):
+                out.append('<div class="table-scroll" tabindex="0"><table><thead><tr>')
+                out.extend('<th scope="col">' + inline(cell) + '</th>' for cell in headers)
+                out.append('</tr></thead><tbody>')
+                i += 2
+                while i < len(lines) and "|" in lines[i]:
+                    cells = table_cells(lines[i])
+                    if len(cells) != len(headers):
+                        break
+                    out.append('<tr>' + ''.join('<td>' + inline(cell) + '</td>' for cell in cells) + '</tr>')
+                    i += 1
+                out.append('</tbody></table></div>')
+                continue
         if line.startswith("### "):
             out.append("<h3>" + inline(line[4:]) + "</h3>")
         elif line.startswith("## "):
