@@ -115,7 +115,7 @@ public class MainActivityRemoteTest {
         assertEquals(45, prefs.getDailyLimitMinutes());
         assertFalse(prefs.isProtectionEnabled());
         assertTrue(((TextView) activity.findViewById(R.id.status_text)).getText().toString()
-                .contains("每日限额：45 分钟"));
+                .contains("每天可看：45 分钟"));
     }
 
     @Test
@@ -136,7 +136,7 @@ public class MainActivityRemoteTest {
             assertSame(original[i], refreshed[i]);
         }
         assertTrue(((TextView) activity.findViewById(R.id.status_text)).getText().toString()
-                .contains("今日已用：2 分 3 秒"));
+                .contains("今天已看：2 分钟"));
     }
 
     @Test
@@ -247,9 +247,10 @@ public class MainActivityRemoteTest {
     }
 
     @Test
-    @Config(sdk = 33, qualifiers = "w360dp-h640dp-port-xhdpi")
+    @Config(sdk = 33, qualifiers = "w360dp-h480dp-port-xhdpi")
     public void narrowLayoutStacksAndScrollsToTheLastAction() {
-        assertResponsiveLayout(false, 720, 1280);
+        // A short viewport keeps this a scrolling test even with the compact summary.
+        assertResponsiveLayout(false, 720, 960);
         assertTrue(((ScrollView) activity.findViewById(R.id.main_scroll)).getScrollY() > 0);
     }
 

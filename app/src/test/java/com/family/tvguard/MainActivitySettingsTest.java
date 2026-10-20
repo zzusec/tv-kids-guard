@@ -115,6 +115,86 @@ public class MainActivitySettingsTest {
     }
 
     @Test
+    public void parentSummaryUsesPlainLanguageWithoutTechnicalDiagnostics() {
+        prefs.setUsedSeconds(123L);
+        MainActivity activity = startPanel(true);
+
+        assertEquals("每天可看：30 分钟\n今天已看：2 分钟\n防护：已开启",
+                ((TextView) activity.findViewById(R.id.status_text)).getText().toString());
+        String warning = ((TextView) activity.findViewById(R.id.warn_text)).getText().toString();
+        assertTrue(warning.contains("设置保护未开启"));
+        assertFalse(warning.contains("普通防护"));
+        assertFalse(warning.contains("强制停止"));
+    }
+
+    @Test
+    public void parentSummaryExplainsTodaysTemporaryBonusAndUnlimitedState() {
+        prefs.setBonusSeconds(600L);
+        prefs.setUnlockedToday(true);
+        MainActivity activity = startPanel(true);
+
+        assertEquals("每天可看：30 分钟\n今天已看：0 分钟\n临时加时：10 分钟\n防护：已开启（今天不限时）",
+                ((TextView) activity.findViewById(R.id.status_text)).getText().toString());
+    }
+
+    @Test
+    public void disabledProtectionDoesNotShowIrrelevantPermissionWarnings() {
+        MainActivity activity = startPanel(false);
+
+        assertEquals("每天可看：30 分钟\n今天已看：0 分钟\n防护：已关闭",
+                ((TextView) activity.findViewById(R.id.status_text)).getText().toString());
+        String warning = ((TextView) activity.findViewById(R.id.warn_text)).getText().toString();
+        assertFalse(warning.contains("悬浮窗"));
+        assertFalse(warning.contains("无障碍"));
+    }
+
+    @Test
+    public void temporaryBonusLabelAndDialogExplainThatItOnlyAppliesToday() {
+        MainActivity activity = startPanel(true);
+        Button button = activity.findViewById(android.R.id.content).findViewWithTag("action_22");
+        assertEquals("22 临时加时长", button.getText().toString());
+
+        enterDigits(activity, "22");
+        PinDialog dialog = latestPinDialog();
+        assertTrue(hasText(dialog.getWindow().getDecorView(), "临时加时长"));
+        assertTrue(hasText(dialog.getWindow().getDecorView(), "仅对今天有效。输入 1-60 分钟，按 OK 确认"));
+        assertEquals(Prefs.DEFAULT_LIMIT_MINUTES, prefs.getDailyLimitMinutes());
+        assertEquals(0L, prefs.getBonusSeconds());
+    }
+
+    @Test
+    public void closingThePanelDoesNotTurnOffProtectionOrClearItsSettings() {
+        prefs.setUsedSeconds(600L);
+        MainActivity activity = startPanel(true);
+
+        enterDigits(activity, "00");
+
+        assertTrue(activity.isFinishing());
+        assertTrue(prefs.isProtectionEnabled());
+        assertEquals(Prefs.DEFAULT_LIMIT_MINUTES, prefs.getDailyLimitMinutes());
+        assertEquals(600L, prefs.getUsedSeconds());
+        assertFalse(AdminSession.isActive());
+        assertTrue(shadowOf(activity).getNextStartedActivity().hasCategory(android.content.Intent.CATEGORY_HOME));
+    }
+
+    @Test
+    public void simplificationDoesNotHideActualGuardFailures() {
+        String previous = GuardService.lastFailure();
+        org.robolectric.util.ReflectionHelpers.setStaticField(GuardService.class,
+                "lastFailure", "计时服务启动失败，请重新打开应用");
+        try {
+            MainActivity activity = startPanel(true);
+            TextView warning = activity.findViewById(R.id.warn_text);
+
+            assertEquals(View.VISIBLE, warning.getVisibility());
+            assertTrue(warning.getText().toString().contains("计时服务启动失败，请重新打开应用"));
+        } finally {
+            org.robolectric.util.ReflectionHelpers.setStaticField(GuardService.class,
+                    "lastFailure", previous);
+        }
+    }
+
+    @Test
     public void disabledButtonAlsoDisablesItsNumericShortcut() {
         MainActivity activity = startPanel(false);
         Button button = activity.findViewById(android.R.id.content).findViewWithTag("action_12");
@@ -154,7 +234,7 @@ public class MainActivitySettingsTest {
         assertFalse(dialog.isShowing());
         assertEquals(45, new Prefs(context).getDailyLimitMinutes());
         TextView status = activity.findViewById(R.id.status_text);
-        assertTrue(status.getText().toString().contains("每日限额：45 分钟"));
+        assertTrue(status.getText().toString().contains("每天可看：45 分钟"));
         assertFalse(prefs.isProtectionEnabled());
         assertNull(GuardService.get());
         assertNull(shadowOf(context).getNextStartedService());

@@ -36,6 +36,7 @@ public class MainActivity extends Activity {
     private boolean updateExternalActivity;
     private boolean awaitingUpdatePermission;
     private boolean updatePrompted;
+    private boolean updateRequested;
     /** Set while this activity is only bouncing to the parent gate; that is not a sign-out. */
     private boolean redirectingToGate;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -125,7 +126,7 @@ public class MainActivity extends Activity {
         LinearLayout menu = findViewById(R.id.menu_actions);
         String[][] actions = {
                 {"00", "关闭面板"}, {"11", "改密码"}, {"12", "修改每日时长"}, {"13", "检查更新"},
-                {"22", "加时长"}, {"33", "立即锁定"}, {"44", "关闭防护"}, {"99", "启用防护"}
+                {"22", "临时加时长"}, {"33", "立即锁定"}, {"44", "关闭防护"}, {"99", "启用防护"}
         };
         // Two columns keep all eight shortcuts on one television screen; the keypad-only rows
         // close the grid underneath.
@@ -418,6 +419,7 @@ public class MainActivity extends Activity {
 
     /** Fetches a newly published release, then installs it; download progress stays on the panel. */
     private void checkUpdate() {
+        updateRequested = true;
         UpdateManager.Snapshot update = UpdateManager.snapshot(this);
         if (UpdateInstaller.hasActiveSession(this)) {
             toast("正在准备安装");
@@ -568,7 +570,7 @@ public class MainActivity extends Activity {
             toast("今天最多增加 " + Prefs.MAX_BONUS_MINUTES + " 分钟");
             return;
         }
-        showPin("增加时长", "输入 1-" + left + " 分钟，按 OK 确认", 2, false, value -> {
+        showPin("临时加时长", "仅对今天有效。输入 1-" + left + " 分钟，按 OK 确认", 2, false, value -> {
             if (!canExecuteAction("22")) {
                 return;
             }
@@ -581,7 +583,7 @@ public class MainActivity extends Activity {
                 toast("服务正在恢复，请稍后重试");
             } else {
                 service.grantBonusMinutes(minutes);
-                toast("已增加 " + minutes + " 分钟");
+                toast("今天已临时增加 " + minutes + " 分钟");
                 refreshStatus();
             }
         });
@@ -664,22 +666,33 @@ public class MainActivity extends Activity {
         if (statusText == null) {
             return;
         }
-        long used = prefs.getUsedSeconds();
-        String text = String.format(Locale.US,
-                "每日限额：%d 分钟\n今日已用：%d 分 %d 秒（已加 %d 分钟）\n防护：%s\n%s",
-                prefs.getDailyLimitMinutes(), used / 60L, used % 60L, prefs.getBonusSeconds() / 60L,
-                prefs.isProtectionEnabled() ? "运行中" : "已关闭，可卸载", DeviceProtection.describe(this));
+        String text = String.format(Locale.US, "每天可看：%d 分钟\n今天已看：%d 分钟",
+                prefs.getDailyLimitMinutes(), prefs.getUsedSeconds() / 60L);
+        if (prefs.getBonusSeconds() > 0L) {
+            text += "\n临时加时：" + prefs.getBonusSeconds() / 60L + " 分钟";
+        }
+        text += "\n防护：" + (!prefs.isProtectionEnabled() ? "已关闭"
+                : prefs.isUnlockedToday() ? "已开启（今天不限时）" : "已开启");
         statusText.setText(text);
         UpdateManager.Snapshot update = UpdateManager.snapshot(this);
-        String updateText = "更新：" + update.message;
+        String updateText;
+        if ("ready".equals(update.status)) {
+            updateText = "有新版本，按 13 安装";
+        } else if ("failed".equals(update.status)) {
+            updateText = "更新未完成，按 13 重试";
+        } else if (updateRequested || "checking".equals(update.status)
+                || "downloading".equals(update.status)) {
+            updateText = update.message;
+        } else {
+            updateText = "";
+        }
         String installation = UpdateInstaller.statusText(this);
         if (!installation.isEmpty()) {
-            updateText += "\n" + installation;
+            updateText += (updateText.isEmpty() ? "" : "\n") + installation;
         }
-        if ("ready".equals(update.status)) {
-            updateText += "\n按 13 安装，已下载 " + update.versionName;
-        }
-        ((TextView) findViewById(R.id.update_text)).setText(updateText);
+        TextView updateView = findViewById(R.id.update_text);
+        updateView.setText(updateText);
+        updateView.setVisibility(updateText.isEmpty() ? View.GONE : View.VISIBLE);
         View focused = findViewById(R.id.menu_actions).findFocus();
         boolean focusedActionHidden = false;
         for (Map.Entry<String, Button> action : actionButtons.entrySet()) {
@@ -694,18 +707,19 @@ public class MainActivity extends Activity {
             actionButtons.get("12").requestFocus();
         }
         StringBuilder warning = new StringBuilder();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
-            warning.append("缺少悬浮窗权限\n");
-        }
-        if (!AppLockService.isEnabled(this)) {
-            warning.append("无障碍未启用，设置入口不受保护。\n");
-        }
-        if (!DeviceProtection.isDeviceOwner(this)) {
-            warning.append("当前为普通防护：设置页与卸载入口需家长密码，")
-                    .append("但系统仍允许强制停止。\n");
+        if (prefs.isProtectionEnabled()) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+                warning.append("倒计时未开启，请允许本应用显示在其他应用上层。\n");
+            }
+            if (!AppLockService.isEnabled(this)) {
+                warning.append("设置保护未开启，请启用本应用的无障碍服务。\n");
+            }
         }
         if (!GuardService.lastFailure().isEmpty()) {
             warning.append(GuardService.lastFailure()).append('\n');
+        }
+        if (!DeviceProtection.lastError().isEmpty()) {
+            warning.append(DeviceProtection.lastError()).append('\n');
         }
         warnText.setVisibility(warning.length() == 0 ? View.GONE : View.VISIBLE);
         warnText.setText(warning.toString().trim());

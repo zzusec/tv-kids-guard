@@ -10,6 +10,6 @@
     <color name="mute_dark">#99E5E5E5</color>
     <color name="accent">#0070D1</color>
     <color name="accent_light">#53B1FF</color>
-    <color name="warning">#C81B3A</color>
+    <color name="warning">#FF6B6B</color>
     <color name="disabled_text">#7A7F87</color>
 </resources>

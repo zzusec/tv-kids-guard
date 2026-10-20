@@ -9,6 +9,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import org.junit.After;
 import org.junit.Before;
@@ -147,6 +148,48 @@ public class MainActivityUpdateTest {
             assertTrue(menu.findViewWithTag("action_" + code) == null);
         }
         assertNotNull(activity.findViewById(R.id.update_text));
+    }
+
+    @Test
+    public void routineUpdateStatusDoesNotClutterTheSummary() {
+        MainActivity activity = startPanel();
+        TextView update = activity.findViewById(R.id.update_text);
+        context.getSharedPreferences(UpdateManager.PREFS, Context.MODE_PRIVATE).edit()
+                .putString("status", "idle").putString("message", "尚未检查更新").commit();
+        ShadowLooper.idleMainLooper(1, java.util.concurrent.TimeUnit.SECONDS);
+        assertEquals(View.GONE, update.getVisibility());
+
+        context.getSharedPreferences(UpdateManager.PREFS, Context.MODE_PRIVATE).edit()
+                .putString("status", "current").putString("message", "已是最新版本").commit();
+        ShadowLooper.idleMainLooper(1, java.util.concurrent.TimeUnit.SECONDS);
+
+        assertEquals(View.GONE, update.getVisibility());
+    }
+
+    @Test
+    public void failedUpdatesStayVisibleWithAShortRecoveryAction() {
+        MainActivity activity = startPanel();
+        context.getSharedPreferences(UpdateManager.PREFS, Context.MODE_PRIVATE).edit()
+                .putString("status", "failed").putString("message", "上次更新任务已中断，等待重新检查").commit();
+        ShadowLooper.idleMainLooper(1, java.util.concurrent.TimeUnit.SECONDS);
+        TextView update = activity.findViewById(R.id.update_text);
+
+        assertEquals(View.VISIBLE, update.getVisibility());
+        assertEquals("更新未完成，按 13 重试", update.getText().toString());
+        assertEquals("上次更新任务已中断，等待重新检查", UpdateManager.snapshot(context).message);
+    }
+
+    @Test
+    public void explicitUpdateCheckStillShowsItsResult() {
+        MainActivity activity = startPanel();
+        activity.findViewById(android.R.id.content).findViewWithTag("action_13").performClick();
+        context.getSharedPreferences(UpdateManager.PREFS, Context.MODE_PRIVATE).edit()
+                .putString("status", "current").putString("message", "已是最新版本").commit();
+        ShadowLooper.idleMainLooper(1, java.util.concurrent.TimeUnit.SECONDS);
+
+        TextView update = activity.findViewById(R.id.update_text);
+        assertEquals(View.VISIBLE, update.getVisibility());
+        assertEquals("已是最新版本", update.getText().toString());
     }
 
     private MainActivity startPanel() {
