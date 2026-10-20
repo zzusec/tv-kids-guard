@@ -100,28 +100,16 @@ public class MainActivityRemoteTest {
     }
 
     @Test
-    public void dpadOnlyCanOpenDailyLimitEnter45AndSaveWithoutNumberKeys() {
+    public void dailyLimitDialogTakesRemoteDigitsAndSaves() {
         startPanel(false);
         press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_CENTER);
         PinDialog dialog = latestPinDialog();
         Window window = dialog.getWindow();
-        // Enter navigation mode, then let ViewRoot perform every focus move.
-        press(window, KeyEvent.KEYCODE_DPAD_RIGHT);
-        press(window, KeyEvent.KEYCODE_DPAD_LEFT);
-        assertEquals("key_1", dialog.getCurrentFocus().getTag());
-        press(window, KeyEvent.KEYCODE_DPAD_DOWN);
-        assertEquals("key_4", dialog.getCurrentFocus().getTag());
-        press(window, KeyEvent.KEYCODE_DPAD_CENTER);
-        press(window, KeyEvent.KEYCODE_DPAD_RIGHT);
-        assertEquals("key_5", dialog.getCurrentFocus().getTag());
-        press(window, KeyEvent.KEYCODE_DPAD_CENTER);
+
+        dialog.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_4));
+        dialog.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_5));
         assertTrue(hasExactText(window.getDecorView(), "45"));
-        assertEquals(Prefs.DEFAULT_LIMIT_MINUTES, prefs.getDailyLimitMinutes());
-        press(window, KeyEvent.KEYCODE_DPAD_DOWN);
-        press(window, KeyEvent.KEYCODE_DPAD_DOWN);
-        press(window, KeyEvent.KEYCODE_DPAD_RIGHT);
-        assertEquals("key_confirm", dialog.getCurrentFocus().getTag());
-        press(window, KeyEvent.KEYCODE_DPAD_CENTER);
+        dialog.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_CENTER));
 
         assertFalse(dialog.isShowing());
         assertEquals(45, prefs.getDailyLimitMinutes());

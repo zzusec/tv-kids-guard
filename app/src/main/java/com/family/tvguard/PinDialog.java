@@ -14,7 +14,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-/** IME-free PIN or numeric entry, operable with either number keys or a DPAD-only remote. */
+/** IME-free numeric entry driven only by the remote number keys; no on-screen keypad. */
 final class PinDialog extends Dialog {
 
     interface Listener {
@@ -28,10 +28,7 @@ final class PinDialog extends Dialog {
     private final Listener listener;
     private final StringBuilder input = new StringBuilder();
     private TextView inputView;
-    private boolean navigationMode = true;
     private boolean submitted;
-    private int selectKey = KeyEvent.KEYCODE_UNKNOWN;
-    private boolean selectNavigates;
 
     PinDialog(Context ctx, String title, String message, Listener listener) {
         this(ctx, title, message, Prefs.PASSWORD_LENGTH, listener);
@@ -87,24 +84,6 @@ final class PinDialog extends Dialog {
         inputView.setGravity(Gravity.CENTER);
         inputView.setMinHeight(Math.round(density * 60));
         box.addView(inputView);
-        RemoteKeypad keypad = new RemoteKeypad(getContext(), new RemoteKeypad.Listener() {
-            @Override
-            public void onDigit(int digit) {
-                appendDigit(digit);
-            }
-
-            @Override
-            public void onDelete() {
-                deleteDigit();
-            }
-
-            @Override
-            public void onConfirm() {
-                submit();
-            }
-        });
-        box.addView(keypad, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         ScrollView scroll = new ScrollView(getContext());
         scroll.setFillViewport(true);
         scroll.addView(box);
@@ -128,39 +107,18 @@ final class PinDialog extends Dialog {
         if (isVolumeKey(code) || code == KeyEvent.KEYCODE_POWER) {
             return super.dispatchKeyEvent(event);
         }
-        int action = event.getAction();
-        if (action != KeyEvent.ACTION_DOWN && action != KeyEvent.ACTION_UP) {
+        if (event.getAction() != KeyEvent.ACTION_DOWN || event.getRepeatCount() > 0) {
             return true;
         }
-        if (RemoteKeypad.isNavigationKey(code)) {
-            navigationMode = true;
-            return super.dispatchKeyEvent(event);
-        }
-        if (RemoteKeypad.isSelectKey(code)) {
-            if (action == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
-                selectKey = code;
-                selectNavigates = navigationMode;
-                if (!selectNavigates) {
-                    submit();
-                }
-            }
-            boolean dispatch = selectKey == code && selectNavigates;
-            if (action == KeyEvent.ACTION_UP) {
-                selectKey = KeyEvent.KEYCODE_UNKNOWN;
-            }
-            return dispatch ? super.dispatchKeyEvent(event) : true;
-        }
-        if (action == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
-            int digit = digitOf(code);
-            if (digit >= 0) {
-                navigationMode = false;
-                appendDigit(digit);
-            } else if (code == KeyEvent.KEYCODE_DEL) {
-                navigationMode = false;
-                deleteDigit();
-            } else if (code == KeyEvent.KEYCODE_BACK) {
-                dismiss();
-            }
+        int digit = digitOf(code);
+        if (digit >= 0) {
+            appendDigit(digit);
+        } else if (code == KeyEvent.KEYCODE_DEL || code == KeyEvent.KEYCODE_DPAD_LEFT) {
+            deleteDigit();
+        } else if (RemoteKeypad.isSelectKey(code)) {
+            submit();
+        } else if (code == KeyEvent.KEYCODE_BACK) {
+            dismiss();
         }
         return true;
     }

@@ -62,28 +62,40 @@ public class RemoteAuthTest {
     }
 
     @Test
-    public void firstFocusedDigitWorksOnOkWithoutAnyArrowKey() {
+    public void dialogTakesPhysicalDigitsAndOkSubmits() {
         List<String> values = new ArrayList<>();
         showDialog(false, 4, values);
 
+        digits(dialog, "1440");
+        assertTrue(hasText(dialog.getWindow().getDecorView(), "1440"));
+        assertTrue(values.isEmpty());
         press(dialog, KeyEvent.KEYCODE_DPAD_CENTER);
 
-        assertEquals("1", dialogInput());
+        assertEquals(List.of("1440"), values);
+        assertFalse(dialog.isShowing());
+    }
+
+    @Test
+    public void dialogLeftArrowDeletesTheLastDigit() {
+        List<String> values = new ArrayList<>();
+        showDialog(false, 4, values);
+
+        digits(dialog, "123");
+        press(dialog, KeyEvent.KEYCODE_DPAD_LEFT);
+
+        assertTrue(hasText(dialog.getWindow().getDecorView(), "12"));
         assertTrue(values.isEmpty());
         assertTrue(dialog.isShowing());
     }
 
     @Test
-    public void parentGateWorksWithPhysicalKeysAndShowsAnOnScreenKeypad() {
+    public void parentGateUsesOnlyTheRemoteNumberKeys() {
         prefs.setPassword("135790");
         AdminAuthActivity activity = startAuth();
 
-        // A remote without number keys must still be able to type: the gate carries the same
-        // on-screen keypad as the quota lock.
-        View gateKeypad = activity.findViewById(R.id.gate_keypad);
-        assertNotNull(gateKeypad);
-        assertEquals(1, ((ViewGroup) gateKeypad).getChildCount());
-
+        // No on-screen keypad: a highlighted virtual key would reveal the PIN to the room.
+        assertNull(activity.findViewById(android.R.id.content)
+                .findViewWithTag("key_1"));
         digits(activity, "13");
         assertEquals("●●", ((TextView) activity.findViewById(R.id.lock_input)).getText().toString());
         press(activity, KeyEvent.KEYCODE_DEL);
@@ -92,22 +104,6 @@ public class RemoteAuthTest {
         assertEquals("", ((TextView) activity.findViewById(R.id.lock_input)).getText().toString());
         assertFalse(AdminSession.isActive());
         assertEquals(0, prefs.getFailCount());
-    }
-
-    @Test
-    public void gateKeypadAcceptsRepeatedOkOnTheFocusedKey() {
-        prefs.setPassword("135790");
-        AdminAuthActivity activity = startAuth();
-
-        for (int i = 1; i <= 5; i++) {
-            View key = activity.findViewById(R.id.gate_keypad).findViewWithTag("key_1");
-            assertTrue(key.requestFocus());
-            press(activity, KeyEvent.KEYCODE_DPAD_CENTER);
-            StringBuilder expected = new StringBuilder();
-            for (int n = 0; n < i; n++) expected.append('●');
-            assertEquals(expected.toString(),
-                    ((TextView) activity.findViewById(R.id.lock_input)).getText().toString());
-        }
     }
 
     @Test
@@ -125,47 +121,15 @@ public class RemoteAuthTest {
     }
 
     @Test
-    public void dpadOnlyDialogEntersDeletesAndConfirmsOnRelease() {
-        List<String> values = new ArrayList<>();
-        showDialog(false, 4, values);
-        enterNavigation(dialog);
-        assertEquals("key_1", dialog.getCurrentFocus().getTag());
-        press(dialog, KeyEvent.KEYCODE_DPAD_RIGHT);
-        press(dialog, KeyEvent.KEYCODE_BUTTON_A);
-        assertEquals("2", dialogInput());
-        focusDialog("delete");
-        press(dialog, KeyEvent.KEYCODE_ENTER);
-        assertEquals("", dialogInput());
-        focusDialog("4");
-        press(dialog, KeyEvent.KEYCODE_DPAD_CENTER);
-        focusDialog("5");
-        press(dialog, KeyEvent.KEYCODE_NUMPAD_ENTER);
-        assertTrue(hasText(dialog.getWindow().getDecorView(), "45"));
-        assertTrue(dialog.isShowing());
-        focusDialog("confirm");
-        dialog.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BUTTON_SELECT));
-        assertTrue(values.isEmpty());
-        dialog.dispatchKeyEvent(new KeyEvent(0, 1, KeyEvent.ACTION_DOWN,
-                KeyEvent.KEYCODE_BUTTON_SELECT, 1));
-        dialog.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BUTTON_SELECT));
-        assertEquals(List.of("45"), values);
-    }
-
-    @Test
-    public void passwordDialogMasksAndAutoConfirmsSixVirtualDigitsOnce() {
+    public void passwordDialogMasksAndAutoConfirmsSixDigitsOnce() {
         List<String> values = new ArrayList<>();
         showDialog(true, 6, values);
-        enterNavigation(dialog);
-        for (char digit : "13579".toCharArray()) {
-            focusDialog(String.valueOf(digit));
-            press(dialog, KeyEvent.KEYCODE_DPAD_CENTER);
-        }
-        assertTrue(hasText(dialog.getWindow().getDecorView(), "●●●●●"));
-        assertFalse(hasText(dialog.getWindow().getDecorView(), "13579"));
-        focusDialog("0");
-        press(dialog, KeyEvent.KEYCODE_DPAD_CENTER);
+
+        digits(dialog, "135790");
+
         assertFalse(dialog.isShowing());
         assertEquals(List.of("135790"), values);
+        // The dialog is gone; a further ENTER cannot submit a second time.
         dialog.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
         dialog.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER));
         assertEquals(1, values.size());
@@ -289,6 +253,13 @@ public class RemoteAuthTest {
         ShadowLooper.idleMainLooper();
         Object root = ReflectionHelpers.callInstanceMethod(dialog.getWindow().getDecorView(),
                 "getViewRootImpl");
+        if (root == null) {
+            // Robolectric only attaches a ViewRoot once the dialog window is laid out.
+            ReflectionHelpers.callInstanceMethod(dialog.getWindow(), "makeActive");
+            root = ReflectionHelpers.callInstanceMethod(dialog.getWindow().getDecorView(),
+                    "getViewRootImpl");
+        }
+        assertNotNull(root);
         ((ShadowViewRootImpl) Shadow.extract(root)).callWindowFocusChanged(true);
         ShadowLooper.idleMainLooper();
     }

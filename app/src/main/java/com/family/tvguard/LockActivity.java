@@ -24,8 +24,6 @@ public class LockActivity extends Activity {
     private TextView inputView;
     private TextView titleView;
     private Prefs prefs;
-    private RemoteKeypad keypad;
-    private boolean physicalInput;
     private boolean rejected;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
@@ -98,69 +96,8 @@ public class LockActivity extends Activity {
         titleView = findViewById(R.id.lock_title);
         promptView = findViewById(R.id.lock_prompt);
         inputView = findViewById(R.id.lock_input);
-        RemoteKeypad.adaptLockLayout(this);
-        keypad = new RemoteKeypad(this, new RemoteKeypad.Listener() {
-            @Override
-            public void onDigit(int digit) {
-                physicalInput = false;
-                enterDigit(digit);
-            }
-
-            @Override
-            public void onDelete() {
-                GuardService service = GuardService.get();
-                if (service != null) {
-                    service.deleteLockDigit();
-                }
-                refreshUi();
-            }
-
-            @Override
-            public void onConfirm() {
-                GuardService service = GuardService.get();
-                if (service != null) {
-                    service.onOk();
-                }
-                refreshUi();
-            }
-        });
-        ((LinearLayout) findViewById(R.id.keypad_container)).addView(keypad);
-        Button manage = findViewById(R.id.parent_manage);
-        manage.setVisibility(View.VISIBLE);
-        manage.setText("家长管理");
-        RemoteKeypad.styleButton(manage);
-        manage.setTag("parent_manage");
-        manage.setOnClickListener(view -> openParentGate(this));
-        manage.setOnKeyListener(new View.OnKeyListener() {
-            private int pressedKey = KeyEvent.KEYCODE_UNKNOWN;
-
-            @Override
-            public boolean onKey(View view, int code, KeyEvent event) {
-                if (!RemoteKeypad.isSelectKey(code)) {
-                    return false;
-                }
-                if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
-                    pressedKey = code;
-                    view.setPressed(true);
-                } else if (event.getAction() == KeyEvent.ACTION_UP) {
-                    boolean click = pressedKey == code && view.isPressed() && !event.isCanceled();
-                    pressedKey = KeyEvent.KEYCODE_UNKNOWN;
-                    view.setPressed(false);
-                    if (click) {
-                        view.performClick();
-                    }
-                }
-                return true;
-            }
-        });
-        for (String tag : new String[]{"key_delete", "key_0", "key_confirm"}) {
-            keypad.findViewWithTag(tag).setNextFocusDownId(manage.getId());
-        }
-        View zero = keypad.findViewWithTag("key_0");
-        manage.setNextFocusUpId(zero.getId());
-        manage.setNextFocusDownId(keypad.findViewWithTag("key_1").getId());
-        // Keep "家长管理" as the default focus: a bare OK opens the parent gate.
-        manage.requestFocus();
+        // No on-screen keypad anywhere: a highlighted virtual key would show the PIN to anyone
+        // in the room. The remote's number keys are the only entry path.
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN
                 | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
                 | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
@@ -306,30 +243,16 @@ public class LockActivity extends Activity {
         if (code == KeyEvent.KEYCODE_POWER || code == KeyEvent.KEYCODE_TV_POWER) {
             return super.dispatchKeyEvent(event);
         }
-        if (RemoteKeypad.isNavigationKey(code)) {
-            physicalInput = false;
-            return super.dispatchKeyEvent(event);
-        }
-        // OK activates the highlighted key. Driving it from here (instead of relying on the
-        // focused button's own key handler) is what makes the on-screen keypad work on remotes
-        // whose OK never reaches the view. The default focus is 家长管理, so a bare OK still
-        // opens the parent gate.
         if (RemoteKeypad.isSelectKey(code)) {
+            // An empty buffer opens the parent gate; a complete PIN submits.
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
                 GuardService current = GuardService.get();
-                if (keypad.activateFocused()) {
-                    refreshUi();
-                } else if (current == null || current.lockInput().isEmpty()) {
+                if (current == null || current.lockInput().isEmpty()) {
                     openParentGate(this);
-                } else {
-                    // Never submit a partial PIN: that cleared the buffer and looked like the
-                    // keypad had stopped accepting input.
-                    if (current.isPasswordComplete()) {
-                        current.onOk();
-                    }
-                    keypad.focusFirst();
-                    refreshUi();
+                } else if (current.isPasswordComplete()) {
+                    current.onOk();
                 }
+                refreshUi();
             }
             return true;
         }
@@ -337,15 +260,13 @@ public class LockActivity extends Activity {
             return true;
         }
         int digit = PinDialog.digitOf(code);
-        GuardService service = GuardService.get();
         if (digit >= 0) {
-            physicalInput = true;
             enterDigit(digit);
-        } else if (RemoteKeypad.isSelectKey(code)) {
-            if (service == null || service.lockInput().isEmpty()) {
-                openParentGate(this);
-            } else {
-                service.onOk();
+        } else if (code == KeyEvent.KEYCODE_DEL || code == KeyEvent.KEYCODE_DPAD_LEFT) {
+            GuardService service = GuardService.get();
+            if (service != null && prefs.lockoutRemainingSeconds() == 0L) {
+                service.deleteLockDigit();
+                rejected = false;
             }
         }
         refreshUi();
@@ -367,7 +288,6 @@ public class LockActivity extends Activity {
     private void refreshUi() {
         GuardService service = GuardService.get();
         titleView.setText("今日电视时长已用完");
-        keypad.setInputEnabled(service != null && prefs.lockoutRemainingSeconds() == 0L);
         if (service == null) {
             promptView.setText("正在恢复服务…");
             inputView.setText("");

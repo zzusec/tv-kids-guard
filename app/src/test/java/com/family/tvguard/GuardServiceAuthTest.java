@@ -358,10 +358,7 @@ public class GuardServiceAuthTest {
         LockActivity lock = startLock();
         taskManager.setLockTaskModeState(ActivityManager.LOCK_TASK_MODE_LOCKED);
 
-        // "家长管理" holds the default focus, so a bare OK opens the parent gate directly.
-        View parent = lock.findViewById(R.id.parent_manage);
-        assertNotNull(parent);
-        assertTrue(parent.hasFocus());
+        // An empty buffer plus OK opens the parent gate without ending Lock Task.
         assertTrue(lock.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, keyCode)));
         assertTrue(lock.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, keyCode)));
 

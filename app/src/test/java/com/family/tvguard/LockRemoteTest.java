@@ -32,6 +32,7 @@ import java.util.Set;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.robolectric.Shadows.shadowOf;
 
@@ -70,9 +71,9 @@ public class LockRemoteTest {
     }
 
     @Test
-    public void directionKeysAndOkAloneCanUnlockWithTheParentPin() {
+    public void physicalDigitsAndOkUnlockWithTheParentPin() {
         for (char digit : "135790".toCharArray()) {
-            select("key_" + digit);
+            press(KeyEvent.KEYCODE_0 + digit - '0');
         }
         assertFalse(service.isLocked());
         assertTrue(prefs.isUnlockedToday());
@@ -80,14 +81,14 @@ public class LockRemoteTest {
     }
 
     @Test
-    public void onScreenDeleteOnlyEditsInputAndCannotResetTheFailureCounter() {
+    public void deleteOnlyEditsInputAndCannotResetTheFailureCounter() {
         prefs.registerFailedAttempt();
         prefs.registerFailedAttempt();
-        select("key_1");
-        select("key_3");
+        press(KeyEvent.KEYCODE_1);
+        press(KeyEvent.KEYCODE_3);
         assertEquals("13", service.lockInput());
 
-        select("key_delete");
+        press(KeyEvent.KEYCODE_DEL);
 
         assertEquals("1", service.lockInput());
         assertEquals(2, prefs.getFailCount());
@@ -98,13 +99,9 @@ public class LockRemoteTest {
     }
 
     @Test
-    public void parentManagementIsReachableWithoutNumericKeysAndDoesNotUnlockQuota() {
-        View management = activity.findViewById(R.id.parent_manage);
-        assertNotNull(management);
-        assertTrue(management.isShown());
-        // "家长管理" holds the default focus so a bare OK opens the parent gate.
-        assertEquals("parent_manage",
-                activity.getWindow().getDecorView().findFocus().getTag());
+    public void emptyOkOpensTheParentGateWithoutUnlockingQuota() {
+        // No on-screen controls: an empty buffer plus OK is the documented parent entry.
+        assertNull(activity.getWindow().getDecorView().findViewWithTag("parent_manage"));
         press(KeyEvent.KEYCODE_DPAD_CENTER);
 
         assertNotNull(shadowOf(activity).getNextStartedActivity());

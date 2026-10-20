@@ -56,25 +56,18 @@ public class LockRepeatedDigitTest {
     }
 
     @Test
-    public void partialBufferIsNeverSubmittedWhenNoKeyOwnsTheFocus() {
-        // Simulates a re-layout that dropped the focus ring while digits are buffered: OK must
-        // not submit the partial PIN and wipe what was typed.
+    public void partialBufferIsNotSubmittedByOk() {
         service.onDigit(7);
         service.onDigit(7);
-        // Focus the parent-entry button, which is not a keypad key.
-        View manage = activity.findViewById(R.id.parent_manage);
-        assertTrue(manage.requestFocus());
         press(KeyEvent.KEYCODE_DPAD_CENTER);
         assertEquals("77", service.lockInput());
         assertTrue(service.isLocked());
     }
 
     @Test
-    public void repeatedOkOnTheSameKeyKeepsTyping() {
-        View key = activity.findViewById(R.id.keypad_container).findViewWithTag("key_1");
-        assertTrue(key.requestFocus());
+    public void repeatedPhysicalDigitsKeepAppending() {
         for (int i = 1; i <= 5; i++) {
-            press(KeyEvent.KEYCODE_DPAD_CENTER);
+            press(KeyEvent.KEYCODE_1);
             assertEquals("after press " + i, repeat('1', i), service.lockInput());
         }
     }
