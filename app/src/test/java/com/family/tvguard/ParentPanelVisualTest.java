@@ -100,17 +100,22 @@ public class ParentPanelVisualTest {
                 Math.abs(pageTitleBounds.centerY() - shortcutBounds.centerY()) <= 1);
 
         View card = activity.findViewById(R.id.status_card);
-        View actions = activity.findViewById(R.id.menu_actions);
         Rect cardBounds = new Rect();
-        Rect actionBounds = new Rect();
         assertTrue(card.getGlobalVisibleRect(cardBounds));
-        assertTrue(actions.getGlobalVisibleRect(actionBounds));
-        assertTrue("Status card and shortcut buttons must start on the same line",
-                Math.abs(cardBounds.top - actionBounds.top) <= 1);
+        for (String code : new String[] {"00", "11"}) {
+            View button = activity.findViewById(android.R.id.content)
+                    .findViewWithTag("action_" + code);
+            Rect buttonBounds = new Rect();
+            assertTrue(button.getGlobalVisibleRect(buttonBounds));
+            assertEquals("Card border and actual button " + code + " must share their top edge",
+                    cardBounds.top, buttonBounds.top);
+        }
 
         TextView overview = activity.findViewById(R.id.status_heading);
+        Rect overviewBounds = new Rect();
+        assertTrue(overview.getGlobalVisibleRect(overviewBounds));
         assertTrue("Overview title needs breathing room below the card border",
-                card.getPaddingTop() >= Math.round(10 * activity.getResources()
+                overviewBounds.top - cardBounds.top >= Math.round(10 * activity.getResources()
                         .getDisplayMetrics().density));
         View hint = activity.findViewById(R.id.menu_hint);
         assertTrue("Shortcut hint must stay on the heading row", hint.getTop() < shortcuts.getBottom());

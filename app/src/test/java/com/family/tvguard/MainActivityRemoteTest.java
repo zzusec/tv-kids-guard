@@ -253,6 +253,26 @@ public class MainActivityRemoteTest {
     }
 
     @Test
+    public void statusCardAlignsWithActualFirstRowButtons() {
+        startPanel(true);
+        Rect card = new Rect();
+        assertTrue(activity.findViewById(R.id.status_card).getGlobalVisibleRect(card));
+        for (String code : new String[] {"00", "11"}) {
+            Rect button = new Rect();
+            assertTrue(action(code).getGlobalVisibleRect(button));
+            assertEquals("Card and actual first-row button " + code + " must align",
+                    card.top, button.top);
+        }
+        Rect firstRow = new Rect();
+        Rect secondRow = new Rect();
+        assertTrue(action("00").getGlobalVisibleRect(firstRow));
+        assertTrue(action("12").getGlobalVisibleRect(secondRow));
+        assertEquals("Later rows must keep their existing gap",
+                Math.round(10 * activity.getResources().getDisplayMetrics().density),
+                secondRow.top - firstRow.bottom);
+    }
+
+    @Test
     public void televisionActionsShowOnlyTheirShortcutAndTitle() {
         startPanel(true);
         for (String code : new String[] {"00", "11", "12", "13", "22", "33", "44"}) {

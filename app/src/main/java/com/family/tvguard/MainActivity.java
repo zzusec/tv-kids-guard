@@ -148,7 +148,7 @@ public class MainActivity extends Activity {
                         0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
                 int gap = Math.round(10 * getResources().getDisplayMetrics().density);
                 params.setMarginStart(column == 0 ? 0 : gap);
-                params.topMargin = gap;
+                params.topMargin = index == 0 ? 0 : gap;
                 row.addView(button, params);
             }
             menu.addView(row);
