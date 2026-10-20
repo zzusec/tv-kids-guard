@@ -123,10 +123,21 @@ public final class RemoteKeypad extends LinearLayout {
      * @return true when a key was activated, false when some other control holds the focus.
      */
     public boolean activateFocused() {
-        View key = focusedKey;
-        if (key == null || !inputEnabled || !key.isEnabled() || !key.isShown()) {
+        if (!inputEnabled) {
             return false;
         }
+        // Ask the view hierarchy directly: a re-layout can move focus without our listener
+        // observing a matching pair of callbacks, which used to leave focusedKey stale/null and
+        // made the keypad stop after the first digit.
+        View key = findFocus();
+        if (key == null || key.getTag() == null
+                || !key.getTag().toString().startsWith("key_")) {
+            key = focusedKey;
+        }
+        if (key == null || !key.isEnabled() || !key.isShown()) {
+            return false;
+        }
+        focusedKey = key;
         key.performClick();
         return true;
     }

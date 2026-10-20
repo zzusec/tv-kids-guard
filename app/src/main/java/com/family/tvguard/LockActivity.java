@@ -127,6 +127,7 @@ public class LockActivity extends Activity {
         ((LinearLayout) findViewById(R.id.keypad_container)).addView(keypad);
         Button manage = findViewById(R.id.parent_manage);
         manage.setVisibility(View.VISIBLE);
+        manage.setText("家长管理");
         RemoteKeypad.styleButton(manage);
         manage.setTag("parent_manage");
         manage.setOnClickListener(view -> openParentGate(this));
@@ -158,6 +159,7 @@ public class LockActivity extends Activity {
         View zero = keypad.findViewWithTag("key_0");
         manage.setNextFocusUpId(zero.getId());
         manage.setNextFocusDownId(keypad.findViewWithTag("key_1").getId());
+        // Keep "家长管理" as the default focus: a bare OK opens the parent gate.
         manage.requestFocus();
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN
                 | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
@@ -320,7 +322,12 @@ public class LockActivity extends Activity {
                 } else if (current == null || current.lockInput().isEmpty()) {
                     openParentGate(this);
                 } else {
-                    current.onOk();
+                    // Never submit a partial PIN: that cleared the buffer and looked like the
+                    // keypad had stopped accepting input.
+                    if (current.isPasswordComplete()) {
+                        current.onOk();
+                    }
+                    keypad.focusFirst();
                     refreshUi();
                 }
             }

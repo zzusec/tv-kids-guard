@@ -13,9 +13,9 @@
         android:layout_height="wrap_content"
         android:gravity="center"
         android:orientation="horizontal"
-        android:paddingStart="48dp"
+        android:paddingStart="40dp"
         android:paddingTop="24dp"
-        android:paddingEnd="48dp"
+        android:paddingEnd="40dp"
         android:paddingBottom="24dp">
 
         <LinearLayout
@@ -24,7 +24,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:orientation="vertical"
-            android:paddingEnd="40dp">
+            android:paddingEnd="32dp">
 
             <TextView
                 android:id="@+id/lock_brand"
@@ -62,9 +62,27 @@
                 style="@style/Text.Accent"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
+                android:layout_marginTop="18dp"
                 android:minHeight="48dp"
                 android:textColor="@color/accent_light" />
+
+            <!-- Same card vocabulary as the parent panel: status first, controls second. -->
+            <LinearLayout
+                android:id="@+id/lock_card"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="22dp"
+                android:background="@drawable/card_bg"
+                android:orientation="vertical"
+                android:padding="18dp">
+
+                <TextView
+                    android:id="@+id/lock_hint"
+                    style="@style/Text.Caption"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="方向键选择 · OK 确认" />
+            </LinearLayout>
         </LinearLayout>
 
         <LinearLayout
