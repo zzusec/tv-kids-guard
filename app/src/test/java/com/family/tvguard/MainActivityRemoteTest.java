@@ -77,6 +77,15 @@ public class MainActivityRemoteTest {
     }
 
     @Test
+    public void panelVersionShowsOnlyTheReleaseName() throws Exception {
+        startPanel(false);
+        String versionName = context.getPackageManager()
+                .getPackageInfo(context.getPackageName(), 0).versionName;
+        TextView version = activity.findViewById(R.id.version_text);
+        assertEquals("版本 " + versionName, version.getText().toString());
+    }
+
+    @Test
     public void actualDpadMovesFocusAndOkActivatesOnlyOnRelease() {
         startPanel(false);
         // Protection off: rows are 00 11 / 12 13 / 99. UP stays in column 0, RIGHT crosses.

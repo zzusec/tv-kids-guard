@@ -22,7 +22,6 @@ import android.widget.Toast;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 /** Remote-controlled parent panel. Visibility alone is never an authorization. */
@@ -82,7 +81,7 @@ public class MainActivity extends Activity {
         TextView version = findViewById(R.id.version_text);
         try {
             PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), 0);
-            version.setText(String.format(Locale.US, "版本 %s (%d)", info.versionName, info.versionCode));
+            version.setText("版本 " + info.versionName);
         } catch (PackageManager.NameNotFoundException e) {
             version.setText("版本信息不可用");
         }
