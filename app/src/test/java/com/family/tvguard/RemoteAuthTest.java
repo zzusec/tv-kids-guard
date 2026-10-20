@@ -7,6 +7,7 @@ import android.os.SystemClock;
 import android.view.InputEvent;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.widget.Button;
 import android.widget.TextView;
@@ -73,12 +74,16 @@ public class RemoteAuthTest {
     }
 
     @Test
-    public void parentGateKeepsTheSimpleNumberEntryInterface() {
+    public void parentGateWorksWithPhysicalKeysAndShowsAnOnScreenKeypad() {
         prefs.setPassword("135790");
         AdminAuthActivity activity = startAuth();
 
-        // The previous, keypad-free gate: physical number keys, delete and OK only.
-        assertNull(activity.findViewById(R.id.keypad_container));
+        // A remote without number keys must still be able to type: the gate carries the same
+        // on-screen keypad as the quota lock.
+        View gateKeypad = activity.findViewById(R.id.gate_keypad);
+        assertNotNull(gateKeypad);
+        assertEquals(1, ((ViewGroup) gateKeypad).getChildCount());
+
         digits(activity, "13");
         assertEquals("●●", ((TextView) activity.findViewById(R.id.lock_input)).getText().toString());
         press(activity, KeyEvent.KEYCODE_DEL);
@@ -87,6 +92,22 @@ public class RemoteAuthTest {
         assertEquals("", ((TextView) activity.findViewById(R.id.lock_input)).getText().toString());
         assertFalse(AdminSession.isActive());
         assertEquals(0, prefs.getFailCount());
+    }
+
+    @Test
+    public void gateKeypadAcceptsRepeatedOkOnTheFocusedKey() {
+        prefs.setPassword("135790");
+        AdminAuthActivity activity = startAuth();
+
+        for (int i = 1; i <= 5; i++) {
+            View key = activity.findViewById(R.id.gate_keypad).findViewWithTag("key_1");
+            assertTrue(key.requestFocus());
+            press(activity, KeyEvent.KEYCODE_DPAD_CENTER);
+            StringBuilder expected = new StringBuilder();
+            for (int n = 0; n < i; n++) expected.append('●');
+            assertEquals(expected.toString(),
+                    ((TextView) activity.findViewById(R.id.lock_input)).getText().toString());
+        }
     }
 
     @Test

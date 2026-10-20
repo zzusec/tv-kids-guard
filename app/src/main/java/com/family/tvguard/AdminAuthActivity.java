@@ -29,6 +29,7 @@ public class AdminAuthActivity extends Activity {
     private boolean visible;
     private boolean openingConsole;
     private boolean authorizedSetup;
+    private RemoteKeypad keypad;
 
     static void launch(Context ctx) {
         Intent intent = new Intent(ctx, AdminAuthActivity.class);
@@ -75,6 +76,26 @@ public class AdminAuthActivity extends Activity {
         title = findViewById(R.id.lock_title);
         prompt = findViewById(R.id.lock_prompt);
         masked = findViewById(R.id.lock_input);
+        keypad = new RemoteKeypad(this, new RemoteKeypad.Listener() {
+            @Override
+            public void onDigit(int digit) {
+                appendDigit(digit);
+                render();
+            }
+
+            @Override
+            public void onDelete() {
+                deleteDigit();
+                render();
+            }
+
+            @Override
+            public void onConfirm() {
+                submit();
+                render();
+            }
+        });
+        ((android.widget.LinearLayout) findViewById(R.id.gate_keypad)).addView(keypad);
         render();
         GuardService.start(this);
     }
@@ -158,7 +179,10 @@ public class AdminAuthActivity extends Activity {
         } else if (code == KeyEvent.KEYCODE_DEL) {
             deleteDigit();
         } else if (RemoteKeypad.isSelectKey(code)) {
-            submit();
+            // OK activates the highlighted key; with no focused key it submits the buffer.
+            if (!keypad.activateFocused() && input.length() == Prefs.PASSWORD_LENGTH) {
+                submit();
+            }
         }
         render();
         return true;
@@ -254,6 +278,7 @@ public class AdminAuthActivity extends Activity {
         }
         title.setText(stage == CHECK ? "今日电视时长已用完" : "设置家长密码");
         long wait = prefs.lockoutRemainingSeconds();
+        keypad.setInputEnabled(wait == 0L && !openingConsole);
         if (wait > 0L) {
             input.setLength(0);
             prompt.setText("错误次数过多，请等待 " + wait + " 秒");
