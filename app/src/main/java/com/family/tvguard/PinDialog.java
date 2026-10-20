@@ -4,6 +4,7 @@ import android.app.Dialog;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -55,35 +56,47 @@ final class PinDialog extends Dialog {
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
         float density = getContext().getResources().getDisplayMetrics().density;
-        int pad = Math.round(density * 20);
+        getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        int pad = Math.round(density * 28);
         LinearLayout box = new LinearLayout(getContext());
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setBackgroundColor(Color.parseColor("#121314"));
+        box.setBackgroundResource(R.drawable.parent_card_bg);
         box.setPadding(pad, pad, pad, pad);
 
         TextView titleView = new TextView(getContext());
         titleView.setText(title);
-        titleView.setTextColor(Color.WHITE);
+        titleView.setTextColor(getContext().getResources().getColor(R.color.panel_ink));
         titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 26);
-        titleView.setLetterSpacing(0.01f);
-        titleView.setTypeface(Typeface.DEFAULT_BOLD);
+        titleView.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         box.addView(titleView);
 
         TextView messageView = new TextView(getContext());
         messageView.setText(message);
-        messageView.setTextColor(Color.parseColor("#CCCCCC"));
+        messageView.setTextColor(getContext().getResources().getColor(R.color.panel_muted));
         messageView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         messageView.setPadding(0, Math.round(density * 12), 0, 0);
         box.addView(messageView);
 
         inputView = new TextView(getContext());
-        inputView.setTextColor(Color.parseColor("#53B1FF"));
+        inputView.setTextColor(getContext().getResources().getColor(R.color.panel_blue_text));
         inputView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 36);
         inputView.setTypeface(Typeface.DEFAULT_BOLD);
         inputView.setLetterSpacing(0.3f);
         inputView.setGravity(Gravity.CENTER);
-        inputView.setMinHeight(Math.round(density * 60));
-        box.addView(inputView);
+        inputView.setMinHeight(Math.round(density * 72));
+        inputView.setBackgroundResource(R.drawable.parent_input_bg);
+        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        inputParams.topMargin = Math.round(density * 22);
+        box.addView(inputView, inputParams);
+
+        TextView help = new TextView(getContext());
+        help.setText(password ? "数字键输入 · 左键删除 · 返回取消"
+                : "数字键输入 · 左键删除 · OK 确认 · 返回取消");
+        help.setTextColor(getContext().getResources().getColor(R.color.panel_muted));
+        help.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        help.setPadding(0, Math.round(density * 18), 0, 0);
+        box.addView(help);
         ScrollView scroll = new ScrollView(getContext());
         scroll.setFillViewport(true);
         scroll.addView(box);

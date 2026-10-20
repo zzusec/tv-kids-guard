@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-20T07:35:47Z",
+  "title": "Design System: tv-kids-guard",
+  "extensions": {
+    "colorMeta": {
+      "panel-canvas": {
+        "role": "neutral",
+        "displayName": "暗石板画布"
+      },
+      "panel-surface": {
+        "role": "neutral",
+        "displayName": "暗石板容器"
+      },
+      "panel-ink": {
+        "role": "neutral",
+        "displayName": "柔白正文"
+      },
+      "panel-muted": {
+        "role": "neutral",
+        "displayName": "灰蓝说明"
+      },
+      "panel-line": {
+        "role": "neutral",
+        "displayName": "灰蓝边界"
+      },
+      "panel-blue": {
+        "role": "primary",
+        "displayName": "遥控焦点蓝"
+      },
+      "panel-blue-deep": {
+        "role": "primary",
+        "displayName": "按压深蓝"
+      },
+      "panel-blue-text": {
+        "role": "primary",
+        "displayName": "信息浅蓝"
+      },
+      "panel-blue-soft": {
+        "role": "primary",
+        "displayName": "输入深蓝底"
+      },
+      "panel-green": {
+        "role": "status",
+        "displayName": "开启状态绿"
+      },
+      "panel-green-soft": {
+        "role": "status",
+        "displayName": "开启深绿底"
+      },
+      "panel-amber": {
+        "role": "status",
+        "displayName": "注意琥珀"
+      },
+      "panel-amber-soft": {
+        "role": "status",
+        "displayName": "注意深琥珀底"
+      },
+      "panel-red": {
+        "role": "status",
+        "displayName": "危险浅红"
+      },
+      "panel-red-soft": {
+        "role": "status",
+        "displayName": "危险深红底"
+      },
+      "panel-danger-focus": {
+        "role": "status",
+        "displayName": "危险焦点红"
+      },
+      "action-selected-text": {
+        "role": "neutral",
+        "displayName": "选中按钮白字"
+      },
+      "action-disabled-text": {
+        "role": "neutral",
+        "displayName": "禁用按钮灰字"
+      }
+    },
+    "typographyMeta": {
+      "title": {
+        "displayName": "页面标题",
+        "purpose": "家长管理页名称。"
+      },
+      "value": {
+        "displayName": "统计值与弹窗标题",
+        "purpose": "今天已看、每天可看及输入弹窗标题。"
+      },
+      "heading": {
+        "displayName": "区块标题",
+        "purpose": "今日概览、快捷操作。"
+      },
+      "action": {
+        "displayName": "操作标题",
+        "purpose": "原生 Button 的快捷码和主操作名称。"
+      },
+      "message": {
+        "displayName": "弹窗说明",
+        "purpose": "输入范围与当前值。"
+      },
+      "caption": {
+        "displayName": "辅助说明",
+        "purpose": "指标名称、状态、按钮详情和提示。"
+      },
+      "input": {
+        "displayName": "遥控数字输入",
+        "purpose": "TextView 展示数字或遮罩，不是屏幕键盘。"
+      }
+    },
+    "breakpoints": [
+      {
+        "name": "landscape-two-columns",
+        "value": "600dp",
+        "condition": "screenWidth > screenHeight && screenWidth / density >= 600"
+      }
+    ]
+  },
+  "narrative": {
+    "northStar": "克制的暗色家长控制台",
+    "overview": "参考 Preline 的卡片层次、细边框与操作信息组织，使用 Android 原生 Java/XML 实现，不引入 Tailwind、WebView 或网页组件运行时。用户明确拒绝过亮、刺眼的浅色方案；管理面板采用暗石板底色与有限的蓝色焦点。",
+    "keyCharacteristics": [
+      "低亮度大面积底色",
+      "清晰的数字与操作说明",
+      "遥控器焦点优先"
+    ],
+    "rules": [],
+    "dos": [
+      "Do 以 colors.xml、styles.xml、activity_main.xml、原生 drawables 与 `MainActivity` / `RemoteKeypad` / `PinDialog` 的实际实现为事实源。",
+      "Do 保留远距离可读性、电视安全边距、显著焦点与错误可见性；更改后验证原生 DPAD 和不同尺寸布局。"
+    ],
+    "donts": [
+      "Don't 把深色面板推广覆盖验证门页或锁屏，不用浅色整屏底、装饰图表、无数据的进度图或营销插图替代真实状态。",
+      "Don't 把 Preline 参考理解为移植网页运行时；官方参考仅为 Card 与 Buttons 的视觉组织方式。"
+    ]
+  }
+}

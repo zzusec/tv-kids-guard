@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tv-kids-guard</title>
+<style>html{color-scheme:dark}body{margin:0;background:#10151e;color:#e8edf5;font:16px/1.8 sans-serif}main{max-width:960px;margin:auto;padding:32px 24px 64px}h1{font-size:28px;line-height:1.35}h2{font-size:22px;margin-top:32px}p,li{overflow-wrap:anywhere}li+li{margin-top:8px}a{color:#9ab9ff}a:focus-visible,summary:focus-visible{outline:2px solid #9ab9ff;outline-offset:4px}code,pre{font-family:monospace;font-size:.9em}code{background:#1b2432;padding:2px 4px;border-radius:4px}details{padding:12px 16px;background:#1b2432;border:1px solid #354154;border-radius:10px}summary{cursor:pointer}pre{overflow:auto;line-height:1.5}.table-wrap{overflow:auto}table{border-collapse:collapse;width:100%}th,td{padding:8px 12px;border:1px solid #354154;text-align:left}footer{margin-top:40px;color:#a5b1c4;font-size:14px}@media(max-width:600px){main{padding:20px 16px 40px}h1{font-size:25px}}@media print{html{color-scheme:light}body{background:white;color:black;font-size:11pt}main{max-width:none;padding:0}a{color:inherit}code,details{background:transparent}pre{white-space:pre-wrap}h2{break-after:avoid}li,tr{break-inside:avoid}details{display:none}footer{color:#444}}</style>
+</head>
+<body><main>
+<h1>tv-kids-guard</h1>
+<h2>Platform</h2>
+<p>android；原生 Android TV，Java 与 XML Views。</p>
+<h2>目标与使用场景</h2>
+<p>帮助家庭管理孩子每天看电视的时间。家长在 Android TV 上使用实体遥控器进入管理面板，查看今天已看时长、每日额度与防护状态，调整规则或处理当前观看。</p>
+<h2>已确认的交互约束</h2>
+<ul>
+<li>Android 原生 Java/XML，不用网页或 WebView 代替电视界面。</li>
+<li>家长密码为 6 位数字，输入遮罩；只使用遥控器数字键，不提供屏幕数字键盘或 IME。左键删除、返回取消。</li>
+<li>管理面板支持两位数字快捷码，也支持方向键选择、OK 确认；修改密码需再次验证家长密码。</li>
+<li>时长输入显示数字，OK 确认；临时加时只对今天生效，不更改每日额度。</li>
+</ul>
+<h2>管理操作</h2>
+<div class="table-wrap"><table><tbody>
+<tr><th>快捷码</th><th>操作</th><th>含义</th></tr>
+<tr><td>00</td><td>关闭面板</td><td>仅退出页面，防护状态不变</td></tr>
+<tr><td>11</td><td>改密码</td><td>再次验证后设置新的家长密码</td></tr>
+<tr><td>12</td><td>修改每日时长</td><td>修改每天的观看额度</td></tr>
+<tr><td>13</td><td>检查更新</td><td>检查并安装应用更新</td></tr>
+<tr><td>22</td><td>临时加时长</td><td>只增加今天可看的时长</td></tr>
+<tr><td>33</td><td>立即锁定</td><td>立即结束本次观看</td></tr>
+<tr><td>44</td><td>关闭防护</td><td>经确认停止管控，保留时长和密码设置</td></tr>
+<tr><td>99</td><td>启用防护</td><td>恢复已保存的管控规则</td></tr>
+</tbody></table></div>
+<p>操作按真实状态显示，隐藏操作不能通过快捷码绕过可用性检查。概览保持精简，但真实的权限、服务和更新错误必须保留。</p>
+<h2>设计范围</h2>
+<p>家长管理面板采用 Preline 启发的克制暗色界面。用户已拒绝过亮、刺眼的浅色方向；验证门页和锁屏保留已有主题与逻辑。具体原生视觉规范见 <a href="DESIGN.md">DESIGN.md</a>。</p>
+<footer>本文是 <a href="PRODUCT.md">PRODUCT.md</a> 的独立 HTML 阅读与打印版本，不是应用界面。</footer>
+</main></body>
+</html>

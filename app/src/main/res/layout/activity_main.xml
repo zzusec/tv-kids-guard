@@ -2,11 +2,11 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/canvas"
+    android:background="@color/panel_canvas"
     android:paddingStart="24dp"
     android:paddingTop="20dp"
     android:paddingEnd="24dp"
-    android:paddingBottom="32dp">
+    android:paddingBottom="24dp">
 
     <ScrollView
         android:id="@+id/main_scroll"
@@ -16,7 +16,8 @@
         android:clipToPadding="false"
         android:descendantFocusability="afterDescendants"
         android:fillViewport="false"
-        android:focusable="false">
+        android:focusable="false"
+        android:scrollbarStyle="outsideOverlay">
 
         <LinearLayout
             android:id="@+id/main_panel"
@@ -24,33 +25,40 @@
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
-            <TextView
-                android:id="@+id/panel_brand"
-                style="@style/Text.Caption"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:background="@drawable/pill_bg"
-                android:paddingStart="14dp"
-                android:paddingTop="6dp"
-                android:paddingEnd="14dp"
-                android:paddingBottom="6dp"
-                android:text="家长面板"
-                android:textColor="@color/accent_light" />
-
-            <TextView
-                android:id="@+id/panel_title"
-                style="@style/Text.Display"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
-                android:text="电视时长管控"
-                android:textSize="32sp" />
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:layout_width="42dp"
+                    android:layout_height="42dp"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/parent_tv_icon" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="14dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/panel_title"
+                        style="@style/PanelText.Title"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="家长管理" />
+
+                </LinearLayout>
+            </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/panel_columns"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
+                android:layout_marginTop="16dp"
                 android:baselineAligned="false"
                 android:orientation="vertical">
 
@@ -58,29 +66,123 @@
                     android:id="@+id/status_column"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:background="@drawable/card_bg"
-                    android:orientation="vertical"
-                    android:padding="22dp">
+                    android:orientation="vertical">
 
-                    <TextView
-                        android:id="@+id/status_text"
-                        style="@style/Text.Body"
+                    <LinearLayout
+                        android:id="@+id/status_card"
                         android:layout_width="match_parent"
-                        android:layout_height="wrap_content" />
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/parent_card_bg"
+                        android:orientation="vertical"
+                        android:padding="18dp">
+
+                        <TextView
+                            style="@style/PanelText.Heading"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="今日概览" />
+
+                        <TextView
+                            android:id="@+id/status_text"
+                            style="@style/PanelText.Caption"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:background="@drawable/parent_status_bg"
+                            android:paddingStart="10dp"
+                            android:paddingTop="5dp"
+                            android:paddingEnd="10dp"
+                            android:paddingBottom="5dp"
+                            android:textColor="@color/panel_green" />
+
+                        <TextView
+                            android:id="@+id/today_override"
+                            style="@style/PanelText.Caption"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:text="今天不限时"
+                            android:textColor="@color/panel_amber"
+                            android:visibility="gone" />
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:layout_marginTop="12dp"
+                            android:layout_marginBottom="12dp"
+                            android:background="@color/panel_line" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                style="@style/PanelText.Caption"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="今天已看" />
+
+                            <TextView
+                                android:id="@+id/used_time_value"
+                                style="@style/PanelText.Value"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                style="@style/PanelText.Caption"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="每天可看" />
+
+                            <TextView
+                                android:id="@+id/daily_limit_value"
+                                style="@style/PanelText.Value"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/bonus_summary"
+                            style="@style/PanelText.Caption"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:textColor="@color/panel_blue_text"
+                            android:visibility="gone" />
+                    </LinearLayout>
 
                     <TextView
                         android:id="@+id/update_text"
-                        style="@style/Text.Caption"
+                        style="@style/PanelText.Caption"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp" />
+                        android:layout_marginTop="12dp"
+                        android:lineSpacingExtra="3dp"
+                        android:textColor="@color/panel_blue_text"
+                        android:visibility="gone" />
 
                     <TextView
                         android:id="@+id/warn_text"
-                        style="@style/Text.Warning"
+                        style="@style/PanelText.Caption"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="14dp"
+                        android:layout_marginTop="12dp"
+                        android:background="@drawable/parent_notice_bg"
+                        android:lineSpacingExtra="3dp"
+                        android:padding="12dp"
+                        android:textColor="@color/panel_amber"
                         android:visibility="gone" />
                 </LinearLayout>
 
@@ -91,11 +193,19 @@
                     android:orientation="vertical">
 
                     <TextView
-                        android:id="@+id/menu_hint"
-                        style="@style/Text.Caption"
+                        style="@style/PanelText.Heading"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="方向键选择 · OK 确认，也可直接输入两位数字" />
+                        android:text="快捷操作" />
+
+                    <TextView
+                        android:id="@+id/menu_hint"
+                        style="@style/PanelText.Caption"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:layout_marginBottom="4dp"
+                        android:text="输入两位数字，或方向键选择、OK 确认" />
 
                     <LinearLayout
                         android:id="@+id/menu_actions"
@@ -109,12 +219,10 @@
 
             <TextView
                 android:id="@+id/version_text"
-                style="@style/Text.Caption"
+                style="@style/PanelText.Caption"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:layout_marginBottom="8dp"
-                android:alpha="0.7" />
+                android:layout_marginTop="12dp" />
         </LinearLayout>
     </ScrollView>
 </FrameLayout>

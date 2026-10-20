@@ -114,8 +114,7 @@ public class MainActivityRemoteTest {
         assertFalse(dialog.isShowing());
         assertEquals(45, prefs.getDailyLimitMinutes());
         assertFalse(prefs.isProtectionEnabled());
-        assertTrue(((TextView) activity.findViewById(R.id.status_text)).getText().toString()
-                .contains("每天可看：45 分钟"));
+        assertEquals("45 分钟", ((TextView) activity.findViewById(R.id.daily_limit_value)).getText().toString());
     }
 
     @Test
@@ -135,8 +134,7 @@ public class MainActivityRemoteTest {
         for (int i = 0; i < original.length; i++) {
             assertSame(original[i], refreshed[i]);
         }
-        assertTrue(((TextView) activity.findViewById(R.id.status_text)).getText().toString()
-                .contains("今天已看：2 分钟"));
+        assertEquals("2 分钟", ((TextView) activity.findViewById(R.id.used_time_value)).getText().toString());
     }
 
     @Test
@@ -252,6 +250,39 @@ public class MainActivityRemoteTest {
         // A short viewport keeps this a scrolling test even with the compact summary.
         assertResponsiveLayout(false, 720, 960);
         assertTrue(((ScrollView) activity.findViewById(R.id.main_scroll)).getScrollY() > 0);
+    }
+
+    @Test
+    public void televisionActionsShowTheirCompleteTitleAndExplanation() {
+        startPanel(true);
+        for (String code : new String[] {"00", "11", "12", "13", "22", "33", "44"}) {
+            Button button = action(code);
+            assertTrue(button.getText().toString().startsWith(code + " "));
+            assertTrue("Every action explains its effect", button.getText().toString().contains("\n"));
+            assertNotNull(button.getLayout());
+            assertEquals("TV actions fit in two lines", 2, button.getLayout().getLineCount());
+            assertTrue(button.getLayout().getHeight() <= button.getHeight()
+                    - button.getCompoundPaddingTop() - button.getCompoundPaddingBottom());
+            Rect visible = new Rect();
+            assertTrue(button.getGlobalVisibleRect(visible));
+            assertEquals("All actions fit on the TV without scrolling", button.getHeight(), visible.height());
+        }
+        assertTrue(action("00").getText().toString().contains("防护状态不变"));
+        assertTrue(action("44").getText().toString().contains("停止管控"));
+    }
+
+    @Test
+    @Config(sdk = 33)
+    public void largerTextStillAllowsEveryActionToScrollFullyIntoView() {
+        RuntimeEnvironment.setFontScale(1.3f);
+        try {
+            assertResponsiveLayout(true, 1920, 1080);
+            Button button = action("44");
+            assertTrue(button.getLayout().getHeight() <= button.getHeight()
+                    - button.getCompoundPaddingTop() - button.getCompoundPaddingBottom());
+        } finally {
+            RuntimeEnvironment.setFontScale(1f);
+        }
     }
 
     private void assertResponsiveLayout(boolean twoColumns, int widthPixels, int heightPixels) {

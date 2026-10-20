@@ -3,6 +3,12 @@ package com.family.tvguard;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
+import android.graphics.Typeface;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.TextAppearanceSpan;
+import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.widget.Button;
 
@@ -27,24 +33,47 @@ public final class RemoteKeypad {
                 || keyCode == KeyEvent.KEYCODE_BUTTON_SELECT;
     }
 
-    /** Shared pill-button styling for the parent panel; the caller owns layout parameters. */
-    public static void styleButton(Button button) {
-        button.setBackgroundResource(R.drawable.remote_button_bg);
+    /** Native Preline-style action: title, remote shortcut and a short explanation. */
+    public static void styleButton(Button button, String code, String label, String detail) {
+        boolean danger = "44".equals(code);
+        Context context = button.getContext();
+        button.setBackgroundResource(danger ? R.drawable.parent_danger_bg : R.drawable.parent_button_bg);
         button.setBackgroundTintList(null);
-        button.setTextColor(new ColorStateList(new int[][] {
-                {-android.R.attr.state_enabled}, {}
-        }, new int[] {Color.parseColor("#7A7F87"), Color.WHITE}));
-        button.setTextSize(21);
+        int ink = context.getResources().getColor(danger ? R.color.panel_red : R.color.panel_ink);
+        int muted = context.getResources().getColor(danger ? R.color.panel_red : R.color.panel_muted);
+        int blue = context.getResources().getColor(danger ? R.color.panel_red : R.color.panel_blue_text);
+        button.setTextColor(actionColors(ink, Color.WHITE));
+        button.setTextSize(18);
+        button.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        button.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
         button.setAllCaps(false);
+        button.setIncludeFontPadding(false);
+        button.setLineSpacing(dp(context, 4), 1f);
         button.setMinWidth(0);
         button.setMinimumWidth(0);
-        button.setMinHeight(dp(button.getContext(), 52));
-        button.setMinimumHeight(dp(button.getContext(), 52));
-        button.setPadding(dp(button.getContext(), 16), dp(button.getContext(), 8),
-                dp(button.getContext(), 16), dp(button.getContext(), 8));
+        button.setMinHeight(dp(context, 72));
+        button.setMinimumHeight(dp(context, 72));
+        button.setPadding(dp(context, 14), dp(context, 12), dp(context, 14), dp(context, 12));
         button.setStateListAnimator(null);
         button.setFocusable(true);
         button.setFocusableInTouchMode(true);
+        String title = code + " " + label;
+        SpannableString text = new SpannableString(title + "\n" + detail);
+        text.setSpan(new TextAppearanceSpan("sans-serif-medium", Typeface.NORMAL, 0,
+                actionColors(blue, Color.WHITE), null), 0, 2, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        int detailSize = Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 14,
+                context.getResources().getDisplayMetrics()));
+        text.setSpan(new TextAppearanceSpan("sans-serif", Typeface.NORMAL, detailSize,
+                actionColors(muted, Color.WHITE), null), title.length() + 1, text.length(),
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        button.setText(text);
+    }
+
+    private static ColorStateList actionColors(int normal, int selected) {
+        return new ColorStateList(new int[][] {
+                {-android.R.attr.state_enabled}, {android.R.attr.state_pressed},
+                {android.R.attr.state_focused}, {}
+        }, new int[] {Color.parseColor("#68778D"), selected, selected, normal});
     }
 
     private static int dp(Context context, int value) {

@@ -3,6 +3,7 @@ package com.family.tvguard;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
+import android.view.ContextThemeWrapper;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Build;
@@ -96,8 +97,7 @@ public class MainActivity extends Activity {
         int screenHeight = getResources().getDisplayMetrics().heightPixels;
         View scroll = findViewById(R.id.main_scroll);
         ViewGroup.LayoutParams panelParams = scroll.getLayoutParams();
-        // The FrameLayout's 24dp side padding already frames the panel; leave a little more so
-        // the focus ring on full-width pills is never clipped.
+        // Keep a safe television overscan margin without making the narrow layout rigid.
         panelParams.width = Math.min(Math.round(900 * density),
                 Math.max(1, screenWidth - Math.round(72 * density)));
         scroll.setLayoutParams(panelParams);
@@ -109,10 +109,10 @@ public class MainActivity extends Activity {
         View actions = findViewById(R.id.menu_column);
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 twoColumns ? 0 : ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT, twoColumns ? 1 : 0);
+                ViewGroup.LayoutParams.WRAP_CONTENT, twoColumns ? 0.7f : 0);
         LinearLayout.LayoutParams menuParams = new LinearLayout.LayoutParams(
                 twoColumns ? 0 : ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT, twoColumns ? 1 : 0);
+                ViewGroup.LayoutParams.WRAP_CONTENT, twoColumns ? 1.3f : 0);
         if (twoColumns) {
             menuParams.setMarginStart(Math.round(24 * density));
         } else {
@@ -125,11 +125,16 @@ public class MainActivity extends Activity {
     private void createActionButtons() {
         LinearLayout menu = findViewById(R.id.menu_actions);
         String[][] actions = {
-                {"00", "关闭面板"}, {"11", "改密码"}, {"12", "修改每日时长"}, {"13", "检查更新"},
-                {"22", "临时加时长"}, {"33", "立即锁定"}, {"44", "关闭防护"}, {"99", "启用防护"}
+                {"00", "关闭面板", "仅退出此页，防护状态不变"},
+                {"11", "改密码", "需再次验证家长密码"},
+                {"12", "修改每日时长", "调整每天的观看额度"},
+                {"13", "检查更新", "获取并安装最新版本"},
+                {"22", "临时加时长", "只加今天，不改每日额度"},
+                {"33", "立即锁定", "立即结束本次观看"},
+                {"44", "关闭防护", "停止管控，保留时长和密码"},
+                {"99", "启用防护", "恢复已保存的管控规则"}
         };
-        // Two columns keep all eight shortcuts on one television screen; the keypad-only rows
-        // close the grid underneath.
+        // Keep real Buttons and the established grid so DPAD and shortcuts share one action path.
         for (int index = 0; index < actions.length; index += 2) {
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
@@ -138,10 +143,10 @@ public class MainActivity extends Activity {
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             for (int column = 0; column < 2 && index + column < actions.length; column++) {
                 String[] action = actions[index + column];
-                Button button = actionButton(action[0], action[1]);
+                Button button = actionButton(action[0], action[1], action[2]);
                 LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                         0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-                int gap = Math.round(5 * getResources().getDisplayMetrics().density);
+                int gap = Math.round(10 * getResources().getDisplayMetrics().density);
                 params.setMarginStart(column == 0 ? 0 : gap);
                 params.topMargin = gap;
                 row.addView(button, params);
@@ -150,12 +155,11 @@ public class MainActivity extends Activity {
         }
     }
 
-    private Button actionButton(String code, String label) {
+    private Button actionButton(String code, String label, String detail) {
         Button button = new Button(this);
         button.setId(View.generateViewId());
         button.setTag("action_" + code);
-        button.setText(code + " " + label);
-        RemoteKeypad.styleButton(button);
+        RemoteKeypad.styleButton(button, code, label, detail);
         button.setOnClickListener(view -> executeAction(code));
         actionButtons.put(code, button);
         return button;
@@ -601,7 +605,8 @@ public class MainActivity extends Activity {
     }
 
     private void confirmRemoval() {
-        new AlertDialog.Builder(this).setTitle("关闭防护")
+        new AlertDialog.Builder(new ContextThemeWrapper(this,
+                R.style.Theme_TvGuard_PanelDialog)).setTitle("关闭防护")
                 .setMessage("将停止管控，不会清除数据。\n确认关闭请按「确认」，返回请按「取消」。")
                 .setNegativeButton("取消", null)
                 .setPositiveButton("确认关闭", (dialog, which) -> {
@@ -666,14 +671,18 @@ public class MainActivity extends Activity {
         if (statusText == null) {
             return;
         }
-        String text = String.format(Locale.US, "每天可看：%d 分钟\n今天已看：%d 分钟",
-                prefs.getDailyLimitMinutes(), prefs.getUsedSeconds() / 60L);
-        if (prefs.getBonusSeconds() > 0L) {
-            text += "\n临时加时：" + prefs.getBonusSeconds() / 60L + " 分钟";
-        }
-        text += "\n防护：" + (!prefs.isProtectionEnabled() ? "已关闭"
-                : prefs.isUnlockedToday() ? "已开启（今天不限时）" : "已开启");
-        statusText.setText(text);
+        boolean enabled = prefs.isProtectionEnabled();
+        statusText.setText(enabled ? "防护已开启" : "防护已关闭");
+        statusText.setTextColor(getResources().getColor(enabled ? R.color.panel_green : R.color.panel_muted));
+        statusText.getBackground().mutate().setTint(getResources().getColor(enabled
+                ? R.color.panel_green_soft : R.color.panel_line));
+        ((TextView) findViewById(R.id.daily_limit_value)).setText(prefs.getDailyLimitMinutes() + " 分钟");
+        ((TextView) findViewById(R.id.used_time_value)).setText(prefs.getUsedSeconds() / 60L + " 分钟");
+        findViewById(R.id.today_override).setVisibility(enabled && prefs.isUnlockedToday()
+                ? View.VISIBLE : View.GONE);
+        TextView bonus = findViewById(R.id.bonus_summary);
+        bonus.setText("今天临时加时 " + prefs.getBonusSeconds() / 60L + " 分钟");
+        bonus.setVisibility(prefs.getBonusSeconds() > 0L ? View.VISIBLE : View.GONE);
         UpdateManager.Snapshot update = UpdateManager.snapshot(this);
         String updateText;
         if ("ready".equals(update.status)) {
@@ -709,10 +718,10 @@ public class MainActivity extends Activity {
         StringBuilder warning = new StringBuilder();
         if (prefs.isProtectionEnabled()) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
-                warning.append("倒计时未开启，请允许本应用显示在其他应用上层。\n");
+                warning.append("倒计时未开启：需允许悬浮窗权限\n");
             }
             if (!AppLockService.isEnabled(this)) {
-                warning.append("设置保护未开启，请启用本应用的无障碍服务。\n");
+                warning.append("设置保护未开启：需启用无障碍服务\n");
             }
         }
         if (!GuardService.lastFailure().isEmpty()) {

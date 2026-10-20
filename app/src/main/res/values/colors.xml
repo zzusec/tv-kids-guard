@@ -12,4 +12,22 @@
     <color name="accent_light">#53B1FF</color>
     <color name="warning">#FF6B6B</color>
     <color name="disabled_text">#7A7F87</color>
+
+    <!-- Parent panel palette, isolated from lock and authentication screens. -->
+    <color name="panel_canvas">#10151E</color>
+    <color name="panel_surface">#1B2432</color>
+    <color name="panel_ink">#E8EDF5</color>
+    <color name="panel_muted">#A5B1C4</color>
+    <color name="panel_line">#354154</color>
+    <color name="panel_blue">#315DCA</color>
+    <color name="panel_blue_deep">#254BA8</color>
+    <color name="panel_blue_text">#9AB9FF</color>
+    <color name="panel_blue_soft">#202F49</color>
+    <color name="panel_green">#90D9B3</color>
+    <color name="panel_green_soft">#17392F</color>
+    <color name="panel_amber">#F3C478</color>
+    <color name="panel_amber_soft">#332A1D</color>
+    <color name="panel_red">#FDA4AF</color>
+    <color name="panel_red_soft">#35222B</color>
+    <color name="panel_danger_focus">#9F2346</color>
 </resources>

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design System: tv-kids-guard</title>
+<style>html{color-scheme:dark}body{margin:0;background:#10151e;color:#e8edf5;font:16px/1.8 sans-serif}main{max-width:960px;margin:auto;padding:32px 24px 64px}h1{font-size:28px;line-height:1.35}h2{font-size:22px;margin-top:32px}p,li{overflow-wrap:anywhere}li+li{margin-top:8px}a{color:#9ab9ff}a:focus-visible,summary:focus-visible{outline:2px solid #9ab9ff;outline-offset:4px}code,pre{font-family:monospace;font-size:.9em}code{background:#1b2432;padding:2px 4px;border-radius:4px}details{padding:12px 16px;background:#1b2432;border:1px solid #354154;border-radius:10px}summary{cursor:pointer}pre{overflow:auto;line-height:1.5}.table-wrap{overflow:auto}table{border-collapse:collapse;width:100%}th,td{padding:8px 12px;border:1px solid #354154;text-align:left}footer{margin-top:40px;color:#a5b1c4;font-size:14px}@media(max-width:600px){main{padding:20px 16px 40px}h1{font-size:25px}}@media print{html{color-scheme:light}body{background:white;color:black;font-size:11pt}main{max-width:none;padding:0}a{color:inherit}code,details{background:transparent}pre{white-space:pre-wrap}h2{break-after:avoid}li,tr{break-inside:avoid}details{display:none}footer{color:#444}}</style>
+</head>
+<body><main>
+<details><summary>机器可读设计 tokens</summary><pre>name: tv-kids-guard 家长管理
+description: 原生 Android TV 的克制暗色家长控制台，以遥控器焦点和清晰状态为中心。
+colors:
+  panel-canvas: &quot;#10151E&quot;
+  panel-surface: &quot;#1B2432&quot;
+  panel-ink: &quot;#E8EDF5&quot;
+  panel-muted: &quot;#A5B1C4&quot;
+  panel-line: &quot;#354154&quot;
+  panel-blue: &quot;#315DCA&quot;
+  panel-blue-deep: &quot;#254BA8&quot;
+  panel-blue-text: &quot;#9AB9FF&quot;
+  panel-blue-soft: &quot;#202F49&quot;
+  panel-green: &quot;#90D9B3&quot;
+  panel-green-soft: &quot;#17392F&quot;
+  panel-amber: &quot;#F3C478&quot;
+  panel-amber-soft: &quot;#332A1D&quot;
+  panel-red: &quot;#FDA4AF&quot;
+  panel-red-soft: &quot;#35222B&quot;
+  panel-danger-focus: &quot;#9F2346&quot;
+  action-selected-text: &quot;#FFFFFF&quot;
+  action-disabled-text: &quot;#68778D&quot;
+typography:
+  title: {fontFamily: &quot;sans-serif-medium&quot;, fontSize: &quot;28sp&quot;}
+  value: {fontFamily: &quot;sans-serif-medium&quot;, fontSize: &quot;26sp&quot;}
+  heading: {fontFamily: &quot;sans-serif-medium&quot;, fontSize: &quot;20sp&quot;}
+  action: {fontFamily: &quot;sans-serif-medium&quot;, fontSize: &quot;18sp&quot;}
+  message: {fontFamily: &quot;Android default&quot;, fontSize: &quot;18sp&quot;}
+  caption: {fontFamily: &quot;sans-serif&quot;, fontSize: &quot;14sp&quot;}
+  input: {fontFamily: &quot;Android default&quot;, fontSize: &quot;36sp&quot;, fontWeight: 700}
+rounded:
+  status: &quot;6dp&quot;
+  action: &quot;10dp&quot;
+  card: &quot;14dp&quot;
+spacing:
+  action-gap: &quot;10dp&quot;
+  action-inline: &quot;14dp&quot;
+  action-block: &quot;12dp&quot;
+  card-padding: &quot;18dp&quot;
+  overscan: &quot;24dp&quot;
+  dialog-padding: &quot;28dp&quot;
+components:
+  card: {backgroundColor: &quot;{colors.panel-surface}&quot;, textColor: &quot;{colors.panel-ink}&quot;, rounded: &quot;{rounded.card}&quot;, padding: &quot;{spacing.card-padding}&quot;}
+  action: {backgroundColor: &quot;{colors.panel-surface}&quot;, textColor: &quot;{colors.panel-ink}&quot;, typography: &quot;{typography.action}&quot;, rounded: &quot;{rounded.action}&quot;, padding: &quot;12dp 14dp&quot;}
+  action-focused: {backgroundColor: &quot;{colors.panel-blue}&quot;, textColor: &quot;{colors.action-selected-text}&quot;, rounded: &quot;{rounded.action}&quot;}
+  danger: {backgroundColor: &quot;{colors.panel-red-soft}&quot;, textColor: &quot;{colors.panel-red}&quot;, rounded: &quot;{rounded.action}&quot;}
+  danger-focused: {backgroundColor: &quot;{colors.panel-danger-focus}&quot;, textColor: &quot;{colors.action-selected-text}&quot;, rounded: &quot;{rounded.action}&quot;}</pre></details>
+<h1>Design System: tv-kids-guard</h1>
+<h2>Overview</h2>
+<p><strong>Creative North Star: &quot;克制的暗色家长控制台&quot;</strong></p>
+<p>参考 Preline 的卡片层次、细边框与操作信息组织，使用 Android 原生 Java/XML 实现，不引入 Tailwind、WebView 或网页组件运行时。用户明确拒绝过亮、刺眼的浅色方案；管理面板采用暗石板底色与有限的蓝色焦点。</p>
+<p><strong>Key Characteristics:</strong> 低亮度大面积底色；清晰的数字与操作说明；遥控器焦点优先。范围为家长管理面板及其输入弹窗，验证门页和锁屏继续使用现有独立主题。</p>
+<h2>Colors</h2>
+<p>Primary：<code>panel-blue</code> 标识当前焦点，<code>panel-blue-deep</code> 用于按压和焦点描边；<code>panel-blue-text</code> 用于快捷编号、加时和更新信息，<code>panel-blue-soft</code> 用于输入区。Neutral：<code>panel-canvas</code>、<code>panel-surface</code>、<code>panel-line</code> 分离背景、容器与边界；<code>panel-ink</code>、<code>panel-muted</code> 分配正文和说明。</p>
+<p>状态色成对使用：绿色文字/深绿底表示开启，琥珀色文字/深琥珀底提示注意；红色文字/深红底只用于关闭防护等危险操作。停用状态用中性色；焦点和按压时，按钮标题、编号、说明全部切换为 <code>action-selected-text</code>，不能只改标题。</p>
+<h2>Typography</h2>
+<p>使用 Android 自带 <code>sans-serif</code>、<code>sans-serif-medium</code> 及系统中文回退，不打包网页字体。层级对应 frontmatter 的页面标题、统计值、区块标题、操作、说明；输入弹窗标题沿用统计值字号，数字显示采用 <code>input</code>。按钮说明使用 caption，标题与说明额外行距为 4dp；标题不强制全大写。</p>
+<h2>Layout</h2>
+<p>原生 <code>FrameLayout</code> + <code>ScrollView</code> + <code>LinearLayout</code>，无固定画布截图。根容器左右及底部留 24dp，顶部 20dp；滚动内容居中，宽度为 <code>min(900dp, 屏宽 - 72dp)</code>。横屏且屏宽至少 600dp 时，概览与操作权重为 0.7:1.3、间距 24dp；其余情况上下堆叠、间距 20dp。</p>
+<p>操作始终是两列真实 Button，同行均分宽度，行列间距 10dp；每个按钮至少高 72dp，允许文字换行增高。概览内部留白使用 card-padding；弹窗宽度为 <code>min(560dp, 屏宽 - 24dp)</code>，内容可滚动。</p>
+<h2>Elevation &amp; Depth</h2>
+<p>面板卡片和操作按钮不依赖阴影，用底色差与细描边建立层次。按钮关闭系统 <code>StateListAnimator</code>，不新增缩放、发光或焦点动效；DPAD 焦点用明确填色表达。</p>
+<h2>Shapes</h2>
+<p>卡片、操作/输入/提示、状态标签分别使用 frontmatter 的 card、action、status 圆角。卡片与普通按钮静态描边 1dp；普通按钮焦点描边 2dp。电视小图为项目内原生 vector 几何图形，不引用第三方商标资产。</p>
+<h2>Components</h2>
+<ul>
+<li>概览只常驻「今天已看」「每天可看」和防护状态；今天不限时、临时加时只在真实生效时显示。真实权限缺失、服务错误与更新失败仍须可见，不为了简洁隐藏问题。</li>
+<li>操作保留两位快捷码与 DPAD/OK 共用执行路径；按原生 <code>Button</code> 处理焦点、按压和可用性，不改成只能点击的卡片。隐藏操作不参与焦点导航，防护切换后焦点不能丢失。</li>
+<li>普通按钮按压使用深蓝，焦点使用蓝色；危险按钮焦点/按压均使用深红。禁用状态使用 canvas 底色与 disabled-text，不可误呈现为已选中。</li>
+<li>输入使用 <code>TextView</code> 展示遥控器数字，不弹 IME、不显示屏幕数字键盘；6 位家长 PIN 遮罩，左键删除，返回取消。时长输入显示数字并用 OK 确认，不把时长也遮罩。</li>
+<li>语义必须区分：<code>00 关闭面板</code> 不停防护；<code>22 临时加时长</code> 只加今天；<code>44 关闭防护</code> 保留设置且确认后执行；<code>99 启用防护</code> 恢复管控。</li>
+</ul>
+<h2>Do&#x27;s and Don&#x27;ts</h2>
+<ul>
+<li><strong>Do</strong> 以 <a href="app/src/main/res/values/colors.xml">colors.xml</a>、<a href="app/src/main/res/values/styles.xml">styles.xml</a>、<a href="app/src/main/res/layout/activity_main.xml">activity_main.xml</a>、<a href="app/src/main/res/drawable/">原生 drawables</a> 与 <code>MainActivity</code> / <code>RemoteKeypad</code> / <code>PinDialog</code> 的实际实现为事实源。</li>
+<li><strong>Do</strong> 保留远距离可读性、电视安全边距、显著焦点与错误可见性；更改后验证原生 DPAD 和不同尺寸布局。</li>
+<li><strong>Don&#x27;t</strong> 把深色面板推广覆盖验证门页或锁屏，不用浅色整屏底、装饰图表、无数据的进度图或营销插图替代真实状态。</li>
+<li><strong>Don&#x27;t</strong> 把 Preline 参考理解为移植网页运行时；官方参考仅为 <a href="https://preline.co/docs/components/card.html">Card</a> 与 <a href="https://preline.co/docs/components/buttons.html">Buttons</a> 的视觉组织方式。</li>
+</ul>
+<footer>本文是 <a href="DESIGN.md">DESIGN.md</a> 的独立 HTML 阅读与打印版本，不是应用界面。</footer>
+</main></body>
+</html>

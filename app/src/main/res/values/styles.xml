@@ -70,4 +70,32 @@
         <item name="android:paddingBottom">8dp</item>
         <item name="android:stateListAnimator">@null</item>
     </style>
+    <style name="PanelText" parent="">
+        <item name="android:textColor">@color/panel_ink</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:textSize">17sp</item>
+    </style>
+    <style name="PanelText.Title">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">28sp</item>
+    </style>
+    <style name="PanelText.Heading">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">20sp</item>
+    </style>
+    <style name="PanelText.Caption">
+        <item name="android:textColor">@color/panel_muted</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+    <style name="PanelText.Value">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">26sp</item>
+    </style>
+    <style name="Theme.TvGuard.PanelDialog" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/parent_card_bg</item>
+        <item name="android:colorAccent">@color/panel_blue_text</item>
+        <item name="android:textColorPrimary">@color/panel_ink</item>
+        <item name="android:textColorSecondary">@color/panel_muted</item>
+    </style>
 </resources>
