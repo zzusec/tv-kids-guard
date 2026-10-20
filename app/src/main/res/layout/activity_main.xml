@@ -26,39 +26,9 @@
             android:orientation="vertical">
 
             <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <ImageView
-                    android:layout_width="42dp"
-                    android:layout_height="42dp"
-                    android:importantForAccessibility="no"
-                    android:src="@drawable/parent_tv_icon" />
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="14dp"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:id="@+id/panel_title"
-                        style="@style/PanelText.Title"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="家长管理" />
-
-                </LinearLayout>
-            </LinearLayout>
-
-            <LinearLayout
                 android:id="@+id/panel_columns"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
                 android:baselineAligned="false"
                 android:orientation="vertical">
 
@@ -69,9 +39,32 @@
                     android:orientation="vertical">
 
                     <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="42dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <ImageView
+                            android:layout_width="42dp"
+                            android:layout_height="42dp"
+                            android:importantForAccessibility="no"
+                            android:src="@drawable/parent_tv_icon" />
+
+                        <TextView
+                            android:id="@+id/panel_title"
+                            style="@style/PanelText.Title"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="14dp"
+                            android:layout_weight="1"
+                            android:text="家长管理" />
+                    </LinearLayout>
+
+                    <LinearLayout
                         android:id="@+id/status_card"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
                         android:background="@drawable/parent_card_bg"
                         android:orientation="vertical"
                         android:paddingStart="18dp"
@@ -198,8 +191,7 @@
 
                     <LinearLayout
                         android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:paddingTop="12dp"
+                        android:layout_height="42dp"
                         android:gravity="center_vertical"
                         android:orientation="horizontal">
 
@@ -225,6 +217,7 @@
                         android:id="@+id/menu_actions"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
                         android:baselineAligned="false"
                         android:descendantFocusability="afterDescendants"
                         android:orientation="vertical" />

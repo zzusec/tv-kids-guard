@@ -88,14 +88,29 @@ public class ParentPanelVisualTest {
     }
 
     @Test
-    public void overviewHeadingAlignsWithShortcutHeading() {
+    public void pageTitleAlignsWithShortcutHeadingAndContentStartsTogether() {
         start(true);
-        TextView overview = activity.findViewById(R.id.status_heading);
+        TextView pageTitle = activity.findViewById(R.id.panel_title);
         TextView shortcuts = activity.findViewById(R.id.menu_heading);
-        assertEquals("Overview title must align with the shortcut title", shortcuts.getTop(), overview.getTop());
+        Rect pageTitleBounds = new Rect();
+        Rect shortcutBounds = new Rect();
+        assertTrue(pageTitle.getGlobalVisibleRect(pageTitleBounds));
+        assertTrue(shortcuts.getGlobalVisibleRect(shortcutBounds));
+        assertTrue("Page and shortcut titles must share the same center line",
+                Math.abs(pageTitleBounds.centerY() - shortcutBounds.centerY()) <= 1);
+
         View card = activity.findViewById(R.id.status_card);
+        View actions = activity.findViewById(R.id.menu_actions);
+        Rect cardBounds = new Rect();
+        Rect actionBounds = new Rect();
+        assertTrue(card.getGlobalVisibleRect(cardBounds));
+        assertTrue(actions.getGlobalVisibleRect(actionBounds));
+        assertTrue("Status card and shortcut buttons must start on the same line",
+                Math.abs(cardBounds.top - actionBounds.top) <= 1);
+
+        TextView overview = activity.findViewById(R.id.status_heading);
         assertTrue("Overview title needs breathing room below the card border",
-                overview.getTop() - card.getTop() >= Math.round(10 * activity.getResources()
+                card.getPaddingTop() >= Math.round(10 * activity.getResources()
                         .getDisplayMetrics().density));
         View hint = activity.findViewById(R.id.menu_hint);
         assertTrue("Shortcut hint must stay on the heading row", hint.getTop() < shortcuts.getBottom());
