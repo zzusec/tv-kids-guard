@@ -32,7 +32,8 @@ prop() {
 printf '=== 电视儿童管控只读预检 ===\n'
 printf '厂商：%s\n' "$(prop ro.product.manufacturer)"
 printf '型号：%s\n' "$(prop ro.product.model)"
-printf 'Android：%s（API %s）\n' "$(prop ro.build.version.release)" "$(prop ro.build.version.sdk)"
+SDK=$(prop ro.build.version.sdk)
+printf 'Android：%s（API %s）\n' "$(prop ro.build.version.release)" "$SDK"
 printf '固件：%s\n' "$(prop ro.build.display.id)"
 
 FEATURES=$("${ADB[@]}" shell pm list features) || {
@@ -85,6 +86,11 @@ printf '\n--- 当前锁定任务 ---\n'
 "${ADB[@]}" shell dumpsys activity activities | grep -i 'lockTaskMode' || true
 
 printf '\n=== 结论 ===\n'
+if [ "$SDK" = 19 ] || [ "$SDK" = 20 ]; then
+  printf '该 Android 版本没有本应用所需的系统级 Lock Task／防卸载／防强停接口。\n'
+  printf '不要执行 dpm set-device-owner；普通版计时与密码保护仍需实机核验权限和后台保活。\n'
+  exit 2
+fi
 if [ "$HAS_ADMIN" != true ]; then
   printf '该固件不能走标准 Device Owner 防卸载／防强停方案。\n'
   printf '普通版只能在权限有效时用家长密码保护设置与卸载入口，不能保证系统拒绝卸载或强停。\n'

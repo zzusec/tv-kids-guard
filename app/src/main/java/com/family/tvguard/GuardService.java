@@ -242,7 +242,7 @@ public class GuardService extends Service {
             delta = 4000L;
         }
 
-        boolean screenOn = powerManager != null && powerManager.isInteractive();
+        boolean screenOn = isScreenOn();
         if (screenOn && !locked) {
             usedMillis += delta;
         }
@@ -278,6 +278,12 @@ public class GuardService extends Service {
 
     private void persist() {
         prefs.setUsedSeconds(usedMillis / 1000L);
+    }
+
+    @SuppressWarnings("deprecation")
+    private boolean isScreenOn() {
+        return powerManager != null && (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH
+                ? powerManager.isInteractive() : powerManager.isScreenOn());
     }
 
     boolean isLocked() {

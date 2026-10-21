@@ -1,8 +1,10 @@
 package com.family.tvguard;
 
 import android.app.Application;
+import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Context;
+import android.util.TypedValue;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -33,7 +35,7 @@ import static org.junit.Assert.assertTrue;
 import static org.robolectric.Shadows.shadowOf;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = {24, 33})
+@Config(sdk = {19, 24, 33})
 @LooperMode(LooperMode.Mode.PAUSED)
 public class MainActivitySettingsTest {
 
@@ -61,6 +63,29 @@ public class MainActivitySettingsTest {
             controller.pause().stop().destroy();
         }
         AdminSession.revoke();
+    }
+
+    @Test
+    public void removalConfirmationUsesReadableDarkThemeAndCancelKeepsProtection() {
+        MainActivity activity = startPanel(true);
+        enterDigits(activity, "44");
+
+        Dialog latest = ShadowDialog.getLatestDialog();
+        assertTrue(latest instanceof AlertDialog);
+        AlertDialog confirmation = (AlertDialog) latest;
+        assertTrue(confirmation.isShowing());
+        int[][] colors = {{android.R.attr.textColorPrimary, R.color.panel_ink},
+                {android.R.attr.textColorSecondary, R.color.panel_muted}};
+        for (int[] color : colors) {
+            TypedValue value = new TypedValue();
+            assertTrue(confirmation.getContext().getTheme().resolveAttribute(color[0], value, true));
+            assertEquals(context.getResources().getColor(color[1]), value.data);
+        }
+
+        confirmation.getButton(AlertDialog.BUTTON_NEGATIVE).performClick();
+        assertTrue(prefs.isProtectionEnabled());
+        assertFalse(AdminSession.isRemovalInProgress());
+        assertTrue(AdminSession.isActive());
     }
 
     @Test

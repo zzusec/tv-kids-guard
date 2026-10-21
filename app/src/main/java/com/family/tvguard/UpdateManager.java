@@ -1,5 +1,6 @@
 package com.family.tvguard;
 
+import android.annotation.TargetApi;
 import android.app.job.JobInfo;
 import android.app.job.JobScheduler;
 import android.content.ComponentName;
@@ -8,6 +9,8 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.Signature;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -101,9 +104,11 @@ public final class UpdateManager {
         public final File apk;
         public final int versionCode;
         public final String versionName;
+        final Metadata metadata;
 
         ReadyUpdate(File apk, Metadata metadata) {
             this.apk = apk;
+            this.metadata = metadata;
             this.versionCode = metadata.versionCode;
             this.versionName = metadata.versionName;
         }
@@ -112,74 +117,100 @@ public final class UpdateManager {
     /** Idempotent: never replaces an existing periodic job or resets its six-hour clock. */
     public static void schedule(Context context) {
         Context app = context.getApplicationContext();
-        synchronized (JOB_LOCK) {
-            try {
-                JobScheduler scheduler = scheduler(app);
-                if (pending(scheduler, PERIODIC_JOB_ID) == null) {
-                    JobInfo job = new JobInfo.Builder(PERIODIC_JOB_ID,
+        if (Build.VERSION.SDK_INT < 21) {
+            UpdateLegacyService.schedule(app);
+            return;
+        }
+        Api21.schedule(app);
+    }
+
+    /** Enqueues background work; no network or APK verification runs on the caller. */
+    public static void checkNow(Context context) {
+        Context app = context.getApplicationContext();
+        if (Build.VERSION.SDK_INT < 21) {
+            UpdateLegacyService.checkNow(app);
+            return;
+        }
+        Api21.checkNow(app);
+    }
+
+    // Keep every JobScheduler type behind a class that KitKat never needs to verify/load.
+    @TargetApi(21)
+    private static final class Api21 {
+        static void schedule(Context app) {
+            synchronized (JOB_LOCK) {
+                try {
+                    JobScheduler scheduler = scheduler(app);
+                    if (pending(scheduler, PERIODIC_JOB_ID) == null) {
+                        JobInfo job = new JobInfo.Builder(PERIODIC_JOB_ID,
+                                new ComponentName(app, UpdateJobService.class))
+                                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                                .setPersisted(true)
+                                .setPeriodic(PERIOD_MS)
+                                .setBackoffCriteria(BACKOFF_MS, JobInfo.BACKOFF_POLICY_EXPONENTIAL)
+                                .build();
+                        if (scheduler.schedule(job) != JobScheduler.RESULT_SUCCESS) {
+                            throw new IOException("系统未接受定时更新任务");
+                        }
+                        checkNow(app);
+                    }
+                } catch (Exception e) {
+                    fail(app, e);
+                }
+            }
+        }
+
+        /** Enqueues a network-constrained job; no network or APK verification runs on the caller. */
+        static void checkNow(Context app) {
+            synchronized (JOB_LOCK) {
+                try {
+                    JobScheduler scheduler = scheduler(app);
+                    if (active != null && !active.cancelled) return;
+                    if (pending(scheduler, NOW_JOB_ID) != null) {
+                        // The parent asked again: drop the backed-off job so this press is not
+                        // silently swallowed by a pending exponential backoff.
+                        scheduler.cancel(NOW_JOB_ID);
+                    }
+                    JobInfo job = new JobInfo.Builder(NOW_JOB_ID,
                             new ComponentName(app, UpdateJobService.class))
                             .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
-                            .setPersisted(true)
-                            .setPeriodic(PERIOD_MS)
                             .setBackoffCriteria(BACKOFF_MS, JobInfo.BACKOFF_POLICY_EXPONENTIAL)
                             .build();
                     if (scheduler.schedule(job) != JobScheduler.RESULT_SUCCESS) {
-                        throw new IOException("系统未接受定时更新任务");
+                        throw new IOException("系统未接受立即检查任务");
                     }
-                    checkNow(app);
+                    waitingForNetwork(app);
+                } catch (Exception e) {
+                    fail(app, e);
                 }
-            } catch (Exception e) {
-                fail(app, e);
             }
+        }
+
+        private static JobScheduler scheduler(Context context) throws IOException {
+            JobScheduler scheduler = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
+            if (scheduler == null) throw new IOException("系统不支持更新任务");
+            return scheduler;
+        }
+
+        private static JobInfo pending(JobScheduler scheduler, int id) {
+            for (JobInfo job : scheduler.getAllPendingJobs()) {
+                if (job.getId() == id) return job;
+            }
+            return null;
+        }
+
+        static boolean waiting(Context context) {
+            JobScheduler scheduler = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
+            return scheduler != null && pending(scheduler, NOW_JOB_ID) != null;
         }
     }
 
-    /** Enqueues a network-constrained job; no network or APK verification runs on the caller. */
-    public static void checkNow(Context context) {
-        Context app = context.getApplicationContext();
-        synchronized (JOB_LOCK) {
-            try {
-                JobScheduler scheduler = scheduler(app);
-                if (active != null && !active.cancelled) return;
-                if (pending(scheduler, NOW_JOB_ID) != null) {
-                    // The parent asked again: drop the backed-off job so this press is not
-                    // silently swallowed by a pending exponential backoff.
-                    scheduler.cancel(NOW_JOB_ID);
-                }
-                JobInfo job = new JobInfo.Builder(NOW_JOB_ID,
-                        new ComponentName(app, UpdateJobService.class))
-                        .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
-                        .setBackoffCriteria(BACKOFF_MS, JobInfo.BACKOFF_POLICY_EXPONENTIAL)
-                        .build();
-                if (scheduler.schedule(job) != JobScheduler.RESULT_SUCCESS) {
-                    throw new IOException("系统未接受立即检查任务");
-                }
-                waitingForNetwork(app);
-            } catch (Exception e) {
-                fail(app, e);
-            }
-        }
-    }
-
-    private static void waitingForNetwork(Context context) throws IOException {
+    static void waitingForNetwork(Context context) throws IOException {
         SharedPreferences prefs = prefs(context);
         boolean ready = "ready".equals(prefs.getString("status", "idle"));
         state(context, ready ? "ready" : "checking",
                 ready ? "更新已下载，等待家长安装；已安排联网检查" : "等待联网检查",
                 prefs.getInt("versionCode", 0), prefs.getString("versionName", ""));
-    }
-
-    private static JobScheduler scheduler(Context context) throws IOException {
-        JobScheduler scheduler = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
-        if (scheduler == null) throw new IOException("系统不支持更新任务");
-        return scheduler;
-    }
-
-    private static JobInfo pending(JobScheduler scheduler, int id) {
-        for (JobInfo job : scheduler.getAllPendingJobs()) {
-            if (job.getId() == id) return job;
-        }
-        return null;
     }
 
     public static Snapshot snapshot(Context context) {
@@ -191,8 +222,9 @@ public final class UpdateManager {
         // A killed process cannot leave a permanently spinning progress indicator.
         synchronized (JOB_LOCK) {
             if (("checking".equals(status) || "downloading".equals(status)) && active == null) {
-                JobScheduler scheduler = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
-                if ("checking".equals(status) && scheduler != null && pending(scheduler, NOW_JOB_ID) != null) {
+                boolean waiting = Build.VERSION.SDK_INT >= 21 ? Api21.waiting(context)
+                        : UpdateLegacyService.waiting(context);
+                if ("checking".equals(status) && waiting) {
                     return new Snapshot("checking", "等待联网检查", version, name);
                 }
                 return new Snapshot("failed", "上次更新任务已中断，等待重新检查", version, name);
@@ -298,6 +330,12 @@ public final class UpdateManager {
         }
     }
 
+    static boolean isRunning() {
+        synchronized (JOB_LOCK) {
+            return active != null && !active.cancelled;
+        }
+    }
+
     static void stopJob(JobHandle handle) {
         synchronized (JOB_LOCK) {
             handle.detached = true;
@@ -375,6 +413,11 @@ public final class UpdateManager {
 
     static void check(Context context, Cancellation cancellation) throws IOException {
         cancellation.check();
+        if (Build.VERSION.SDK_INT < 21) {
+            ConnectivityManager connectivity = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+            NetworkInfo network = connectivity == null ? null : connectivity.getActiveNetworkInfo();
+            if (network == null || !network.isConnected()) throw new IOException("当前无可用网络，更新将退避重试");
+        }
         deletePartial(context);
         SharedPreferences previous = prefs(context);
         state(context, "checking", "正在检查更新", previous.getInt("versionCode", 0),
@@ -523,7 +566,8 @@ public final class UpdateManager {
         }
     }
 
-    static HttpURLConnection open(URL url, Cancellation cancellation, String accept) throws IOException {        for (int redirects = 0; ; redirects++) {
+    static HttpURLConnection open(URL url, Cancellation cancellation, String accept) throws IOException {
+        for (int redirects = 0; ; redirects++) {
             cancellation.check();
             validateUrl(url);
             HttpURLConnection connection = connections.open(url);
@@ -579,7 +623,9 @@ public final class UpdateManager {
         try {
             SSLContext context = SSLContext.getInstance("TLS");
             context.init(null, new TrustManager[] {new CombinedTrustManager()}, null);
-            return context.getSocketFactory();
+            SSLSocketFactory factory = context.getSocketFactory();
+            // KitKat supports TLS 1.2 but does not enable it for ordinary TLS sockets.
+            return Build.VERSION.SDK_INT < 21 ? new UpdateTlsSocketFactory(factory) : factory;
         } catch (GeneralSecurityException e) {
             throw new IOException("无法初始化更新 TLS", e);
         }
@@ -715,17 +761,30 @@ public final class UpdateManager {
         }
         if (!metadata.versionName.equals(archive.versionName)) throw new IOException("APK versionName 不符");
         if (metadata.minSdk > sdk) throw new IOException("更新不支持此 Android 版本");
-        if (sdk >= 24 && (archive.applicationInfo == null
-                || archive.applicationInfo.minSdkVersion != metadata.minSdk
-                || archive.applicationInfo.minSdkVersion > sdk)) throw new IOException("APK minSdk 不符");
+        if (sdk >= 24 && !Api24.matchesMinSdk(archive, metadata.minSdk, sdk)) throw new IOException("APK minSdk 不符");
         Signature[] current = signers(installed, sdk);
         Signature[] incoming = signers(archive, sdk);
         if (!sameSignatures(current, incoming)) throw new IOException("APK 签名与已安装应用不同");
     }
 
     private static Signature[] signers(PackageInfo info, int sdk) {
-        if (sdk >= 28) return info.signingInfo == null ? null : info.signingInfo.getApkContentsSigners();
+        if (sdk >= 28) return Api28.signers(info);
         return info.signatures;
+    }
+
+    @TargetApi(24)
+    private static final class Api24 {
+        static boolean matchesMinSdk(PackageInfo archive, int declared, int sdk) {
+            return archive.applicationInfo != null && archive.applicationInfo.minSdkVersion == declared
+                    && archive.applicationInfo.minSdkVersion <= sdk;
+        }
+    }
+
+    @TargetApi(28)
+    private static final class Api28 {
+        static Signature[] signers(PackageInfo info) {
+            return info.signingInfo == null ? null : info.signingInfo.getApkContentsSigners();
+        }
     }
 
     static boolean sameSignatures(Signature[] first, Signature[] second) {
@@ -838,12 +897,12 @@ public final class UpdateManager {
         fail(context, exception);
     }
 
-    private static void fail(Context context, Exception exception) {
+    static void fail(Context context, Exception exception) {
         String message = concise(exception);
         Log.w("TVGuardUpdate", message);
         SharedPreferences prefs = prefs(context);
         SharedPreferences.Editor editor = prefs.edit();
-        putState(editor, "failed", message + "（失败后由系统指数退避重试，起始 30 分钟）",
+        putState(editor, "failed", message + "（失败后指数退避重试，起始 30 分钟）",
                 prefs.getInt("versionCode", 0), prefs.getString("versionName", ""));
         if (!editor.commit()) Log.e("TVGuardUpdate", "无法持久保存更新错误");
     }

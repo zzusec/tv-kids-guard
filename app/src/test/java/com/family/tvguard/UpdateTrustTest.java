@@ -17,7 +17,7 @@ import static org.junit.Assert.assertTrue;
 
 /** The embedded roots must stay valid public anchors and load into a usable trust store. */
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = {24, 33})
+@Config(sdk = {19, 24, 33})
 public class UpdateTrustTest {
 
     @Test

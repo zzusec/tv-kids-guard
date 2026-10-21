@@ -24,10 +24,10 @@ android {
 
     defaultConfig {
         applicationId = "com.family.tvguard"
-        minSdk = 21
+        minSdk = 19
         targetSdk = 33
-        versionCode = 34
-        versionName = "2.5.3"
+        versionCode = 35
+        versionName = "2.5.4"
     }
 
     signingConfigs {
@@ -83,5 +83,6 @@ tasks.matching { it.name == "preReleaseBuild" }.configureEach {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.robolectric:robolectric:4.14.1")
+    // Last Robolectric release that can exercise the Android 4.4 runtime.
+    testImplementation("org.robolectric:robolectric:4.12.2")
 }

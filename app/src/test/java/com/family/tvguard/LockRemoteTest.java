@@ -2,6 +2,7 @@ package com.family.tvguard;
 
 import android.app.Application;
 import android.content.Context;
+import android.os.PowerManager;
 import android.os.SystemClock;
 import android.view.KeyEvent;
 import android.view.InputEvent;
@@ -37,7 +38,7 @@ import static org.junit.Assert.assertTrue;
 import static org.robolectric.Shadows.shadowOf;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = {24, 28, 30, 33, 35}, qualifiers = "w960dp-h540dp-land")
+@Config(sdk = {19, 24, 28, 30, 33, 34}, qualifiers = "w960dp-h540dp-land")
 @LooperMode(LooperMode.Mode.PAUSED)
 public class LockRemoteTest {
     private Prefs prefs;
@@ -68,6 +69,29 @@ public class LockRemoteTest {
         controller.pause().stop().destroy();
         serviceController.destroy();
         AdminSession.revoke();
+    }
+
+    @Test
+    public void standbySuppressesLockLaunchAndLitScreenRestoresIt() {
+        Application context = RuntimeEnvironment.getApplication();
+        PowerManager power = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+        while (shadowOf(context).getNextStartedActivity() != null) {
+            // Ignore lock launches made while creating the guard service.
+        }
+        shadowOf(power).setIsScreenOn(false);
+        try {
+            LockActivity.launch(context);
+            assertNull(shadowOf(context).getNextStartedActivity());
+            assertTrue(service.isLocked());
+            assertFalse(prefs.isUnlockedToday());
+
+            shadowOf(power).setIsScreenOn(true);
+            LockActivity.launch(context);
+            assertEquals(LockActivity.class.getName(), shadowOf(context).getNextStartedActivity()
+                    .getComponent().getClassName());
+        } finally {
+            shadowOf(power).setIsScreenOn(true);
+        }
     }
 
     @Test
@@ -149,6 +173,10 @@ public class LockRemoteTest {
         long now = SystemClock.uptimeMillis();
         Object root = ReflectionHelpers.callInstanceMethod(activity.getWindow().getDecorView(),
                 "getViewRootImpl");
+        if (RuntimeEnvironment.getApiLevel() == 19) {
+            // KitKat drops events when Robolectric's unconnected IME reports NOT_HANDLED.
+            ReflectionHelpers.setField(root, "mLastWasImTarget", false);
+        }
         for (int action : new int[]{KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP}) {
             ReflectionHelpers.callInstanceMethod(root, "dispatchInputEvent",
                     ReflectionHelpers.ClassParameter.from(InputEvent.class,

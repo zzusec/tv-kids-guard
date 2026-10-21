@@ -10,6 +10,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.TextView;
 
 import org.junit.After;
@@ -34,7 +35,7 @@ import static org.junit.Assert.*;
 import static org.robolectric.Shadows.shadowOf;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = {24, 33})
+@Config(sdk = {19, 24, 33})
 @LooperMode(LooperMode.Mode.PAUSED)
 public class RemoteAuthTest {
     private Application context;
@@ -59,6 +60,21 @@ public class RemoteAuthTest {
             controller.pause().stop().destroy();
         }
         AdminSession.revoke();
+    }
+
+    @Test
+    public void pinSurfacesHaveNoEditableFieldOrOnScreenNumberKeys() {
+        prefs.setPassword("135790");
+        AdminAuthActivity activity = startAuth();
+        assertRemoteOnlyInput(activity.findViewById(android.R.id.content));
+
+        List<String> values = new ArrayList<>();
+        showDialog(true, 6, values);
+        assertRemoteOnlyInput(dialog.getWindow().getDecorView());
+        digits(dialog, "13579");
+        assertEquals("●●●●●", dialogInput());
+        assertTrue(values.isEmpty());
+        assertTrue(dialog.isShowing());
     }
 
     @Test
@@ -331,6 +347,10 @@ public class RemoteAuthTest {
                 : ((AdminAuthActivity) target).getWindow();
         Object root = ReflectionHelpers.callInstanceMethod(window.getDecorView(), "getViewRootImpl");
         assertNotNull("Remote events must enter the attached ViewRoot", root);
+        if (RuntimeEnvironment.getApiLevel() == 19) {
+            // KitKat drops events when Robolectric's unconnected IME reports NOT_HANDLED.
+            ReflectionHelpers.setField(root, "mLastWasImTarget", false);
+        }
         long now = SystemClock.uptimeMillis();
         for (int action : new int[] {KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP}) {
             ReflectionHelpers.callInstanceMethod(root, "dispatchInputEvent",
@@ -343,6 +363,23 @@ public class RemoteAuthTest {
     private String dialogInput() {
         TextView input = ReflectionHelpers.getField(dialog, "inputView");
         return input.getText().toString();
+    }
+
+    private void assertRemoteOnlyInput(View view) {
+        assertFalse("Remote PIN input must not create an IME-backed field", view instanceof EditText);
+        if (view instanceof Button) {
+            assertFalse("PIN digits must never become selectable on-screen buttons",
+                    ((Button) view).getText().toString().trim().matches("[0-9]"));
+        }
+        for (int digit = 0; digit <= 9; digit++) {
+            assertNull(view.findViewWithTag("key_" + digit));
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                assertRemoteOnlyInput(group.getChildAt(i));
+            }
+        }
     }
 
     private boolean hasText(View view, String text) {

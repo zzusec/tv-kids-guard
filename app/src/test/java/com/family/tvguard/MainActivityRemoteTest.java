@@ -5,6 +5,7 @@ import android.app.Dialog;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Rect;
+import android.graphics.drawable.Drawable;
 import android.os.SystemClock;
 import android.view.InputEvent;
 import android.view.KeyEvent;
@@ -44,7 +45,7 @@ import static org.robolectric.Shadows.shadowOf;
 import static org.robolectric.util.ReflectionHelpers.ClassParameter;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = {24, 33}, qualifiers = "w960dp-h540dp-land-xhdpi")
+@Config(sdk = {19, 24, 33}, qualifiers = "w960dp-h540dp-land-xhdpi")
 @LooperMode(LooperMode.Mode.PAUSED)
 public class MainActivityRemoteTest {
     private Application context;
@@ -74,6 +75,15 @@ public class MainActivityRemoteTest {
         }
         UpdateInstaller.cancel(context);
         AdminSession.revoke();
+    }
+
+    @Test
+    public void parentPanelIconLoadsAtTheSameSizeOnEverySupportedSdk() {
+        Drawable icon = context.getResources().getDrawable(R.drawable.parent_tv_icon);
+        assertNotNull(icon);
+        int size = Math.round(42 * context.getResources().getDisplayMetrics().density);
+        assertEquals(size, icon.getIntrinsicWidth());
+        assertEquals(size, icon.getIntrinsicHeight());
     }
 
     @Test
@@ -236,13 +246,13 @@ public class MainActivityRemoteTest {
     }
 
     @Test
-    @Config(sdk = 33, qualifiers = "w1280dp-h720dp-land-mdpi")
+    @Config(sdk = {19, 33}, qualifiers = "w1280dp-h720dp-land-mdpi")
     public void hd720LayoutFitsAndAllActionsCanBeReached() {
         assertResponsiveLayout(true, 1280, 720);
     }
 
     @Test
-    @Config(sdk = 33, qualifiers = "w960dp-h540dp-land-xhdpi")
+    @Config(sdk = {19, 33}, qualifiers = "w960dp-h540dp-land-xhdpi")
     public void fullHd1080LayoutFitsAndAllActionsCanBeReached() {
         assertResponsiveLayout(true, 1920, 1080);
     }
@@ -254,7 +264,7 @@ public class MainActivityRemoteTest {
     }
 
     @Test
-    @Config(sdk = 33, qualifiers = "w360dp-h480dp-port-xhdpi")
+    @Config(sdk = {19, 33}, qualifiers = "w360dp-h480dp-port-xhdpi")
     public void narrowLayoutStacksAndScrollsToTheLastAction() {
         // A short viewport keeps this a scrolling test even with the compact summary.
         assertResponsiveLayout(false, 720, 960);
@@ -419,6 +429,11 @@ public class MainActivityRemoteTest {
         if (!window.getDecorView().hasWindowFocus()) {
             ((ShadowViewRootImpl) Shadow.extract(root)).callWindowFocusChanged(true);
             ShadowLooper.idleMainLooper();
+        }
+        if (RuntimeEnvironment.getApiLevel() == 19) {
+            // KitKat drops events when Robolectric's unconnected IME reports NOT_HANDLED.
+            // These IME-free screens still receive keys through the real ViewRoot pipeline.
+            ReflectionHelpers.setField(root, "mLastWasImTarget", false);
         }
         long now = SystemClock.uptimeMillis();
         ReflectionHelpers.callInstanceMethod(root, "dispatchInputEvent", ClassParameter.from(

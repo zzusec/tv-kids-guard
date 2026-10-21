@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>开发与发布</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0 auto; max-width: 46rem; padding: 2.5rem 1.25rem 4rem;
+    font: 16px/1.75 -apple-system, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+    color: #1c1f23; background: #fff;
+  }
+  h1 { font-size: 1.9rem; margin: 0 0 1.2rem; letter-spacing: -0.01em; }
+  h2 { font-size: 1.25rem; margin: 2.4rem 0 .8rem; padding-bottom: .35rem; border-bottom: 1px solid #e5e8eb; }
+  h3 { font-size: 1.05rem; margin: 1.6rem 0 .5rem; }
+  p, li { color: #33383e; }
+  a { color: #2057ad; overflow-wrap: anywhere; }
+  img { display: block; max-width: 100%; height: auto; border-radius: 8px; }
+  .table-scroll { overflow-x: auto; margin: 1.2rem 0; }
+  table { width: 100%; border-collapse: collapse; text-align: left; font-size: .92em; }
+  th, td { min-width: 5rem; padding: .65rem .8rem; border: 1px solid #e5e8eb; vertical-align: top; }
+  th { background: #f6f8fa; }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .88em; background: #f2f4f6; padding: .15em .4em; border-radius: 4px;
+  }
+  pre {
+    background: #f6f8fa; border: 1px solid #e5e8eb; border-radius: 8px;
+    padding: 1rem 1.1rem; overflow-x: auto; line-height: 1.6;
+  }
+  pre code { background: none; padding: 0; font-size: .85em; }
+  ul { padding-left: 1.3rem; }
+  li { margin: .35rem 0; }
+  strong { color: #14181c; }
+  @media (prefers-color-scheme: dark) {
+    body { color: #e6e9ec; background: #14171a; }
+    p, li { color: #c3c9d0; }
+    strong { color: #fff; }
+    a { color: #9bbaff; }
+    th, td { border-color: #2a3037; }
+    th { background: #1b1f24; }
+    h2 { border-color: #2a3037; }
+    code { background: #23282e; color: #e6e9ec; }
+    pre { background: #1b1f24; border-color: #2a3037; }
+  }
+  @media print {
+    :root { color-scheme: light; }
+    body { max-width: none; padding: 0; color: #000; background: #fff; }
+    p, li, strong, a { color: #000; }
+    code, pre, th { color: #000; background: #f6f8fa; }
+    h2, th, td, pre { border-color: #ccc; }
+    .table-scroll { overflow: visible; }
+    th, td { min-width: 0; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+    pre, img, tr { page-break-inside: avoid; }
+    h2, h3 { page-break-after: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<h1>开发与发布</h1>
+<p>需要 JDK 17、Android SDK 35、build-tools 35.0.0 和 Python 3。用 <code>ANDROID_HOME</code> 或本机 <code>local.properties</code> 的 <code>sdk.dir</code> 指定 SDK。</p>
+<h2>测试与开发版</h2>
+<pre><code>./gradlew testDebugUnitTest assembleDebug
+python3 -I -B -m unittest discover -s tools -p &#x27;test_*.py&#x27; -v</code></pre>
+<p>开发 APK 位于 <code>app/build/outputs/apk/debug/app-debug.apk</code>。开发签名不能覆盖正式版，CI 不包含生产私钥。</p>
+<h2>Android 4.4 兼容</h2>
+<p>最低版本为 API 19，现代 Android 路径保留。Robolectric 固定为 4.12.2：这是仍支持 API 19 的版本，4.13 起移除了该运行时。</p>
+<ul>
+  <li>亮屏计时在 API 19 使用 <code>PowerManager.isScreenOn()</code>；关屏暂停、用量持久化和家长密码规则不变。</li>
+  <li>界面提供旧版主题、图形资源和控件样式，不依赖原生 Material、VectorDrawable 或 API 21 的文字与按钮接口。</li>
+  <li>API 19 更新使用 AlarmManager 和独立服务；API 21 以上保留 JobScheduler。旧系统启用 TLS 1.2，仍验证主机、证书、APK 签名及版本。</li>
+  <li>API 19 通过系统安装器、在有效家长维护授权下确认安装；不继承进程重启前的授权，不清除原有密码或时长数据。</li>
+  <li>Android 4.4 没有 Lock Task 和本应用所需的防卸载/强停策略，页面明确显示不支持，不把普通管理员当成系统级保护。发现旧版设备所有者时拒绝不安全解除，不恢复出厂。</li>
+</ul>
+<p>回归覆盖 API 19 的计时/关屏/重启、鉴权、界面资源、权限入口和更新路径，并保留 API 24、33 的相关测试。原生图形截图测试在 API 33 运行，不把预览当作真机截图。小米电视 2 的实机验证仍待 ADB 恢复，未验证厂商后台保活和遥控行为。</p>
+<h2>正式发布</h2>
+<p>私钥保存在仓库外；默认读取 <code>~/.config/tv-kids-guard/signing.properties</code>，也可用 <code>TVGUARD_SIGNING_PROPERTIES</code> 指定：</p>
+<pre><code>storeFile=/绝对路径/release.keystore
+storePassword=&lt;密钥库密码&gt;
+keyAlias=&lt;原签名别名&gt;
+keyPassword=&lt;私钥密码&gt;</code></pre>
+<p>递增版本号，使用原签名构建。输出目录需为空或不存在：</p>
+<pre><code>./gradlew testDebugUnitTest assembleRelease
+python3 -I -B tools/release_update.py --apk app/build/outputs/apk/release/app-release.apk --out app/build/outputs/ota --notes &#x27;更新说明&#x27;
+python3 -I -B tools/release_update.py --apk app/build/outputs/apk/release/app-release.apk --out app/build/outputs/ota --notes &#x27;更新说明&#x27; --publish</code></pre>
+<p>发布前检查 <code>tv-kids-guard.apk</code>、<code>update.json</code> 和 <code>SHA256SUMS</code>。发布工具只上传这三个文件，并校验 <code>config/release-certificate.sha256</code> 中的公开证书指纹；不要提交私钥或签名密码。</p>
+
+</body>
+</html>

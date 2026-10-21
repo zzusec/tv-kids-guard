@@ -3,9 +3,9 @@ package com.family.tvguard;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
-import android.view.ContextThemeWrapper;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -604,8 +604,7 @@ public class MainActivity extends Activity {
     }
 
     private void confirmRemoval() {
-        new AlertDialog.Builder(new ContextThemeWrapper(this,
-                R.style.Theme_TvGuard_PanelDialog)).setTitle("关闭防护")
+        new AlertDialog.Builder(this, R.style.Theme_TvGuard_PanelDialog).setTitle("关闭防护")
                 .setMessage("将停止管控，不会清除数据。\n确认关闭请按「确认」，返回请按「取消」。")
                 .setNegativeButton("取消", null)
                 .setPositiveButton("确认关闭", (dialog, which) -> {
@@ -673,8 +672,13 @@ public class MainActivity extends Activity {
         boolean enabled = prefs.isProtectionEnabled();
         statusText.setText(enabled ? "防护已开启" : "防护已关闭");
         statusText.setTextColor(getResources().getColor(enabled ? R.color.panel_green : R.color.panel_muted));
-        statusText.getBackground().mutate().setTint(getResources().getColor(enabled
-                ? R.color.panel_green_soft : R.color.panel_line));
+        int statusColor = getResources().getColor(enabled
+                ? R.color.panel_green_soft : R.color.panel_line);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            statusText.getBackground().mutate().setTint(statusColor);
+        } else {
+            ((GradientDrawable) statusText.getBackground().mutate()).setColor(statusColor);
+        }
         ((TextView) findViewById(R.id.daily_limit_value)).setText(prefs.getDailyLimitMinutes() + " 分钟");
         ((TextView) findViewById(R.id.used_time_value)).setText(prefs.getUsedSeconds() / 60L + " 分钟");
         findViewById(R.id.today_override).setVisibility(enabled && prefs.isUnlockedToday()

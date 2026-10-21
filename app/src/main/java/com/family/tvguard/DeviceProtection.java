@@ -1,5 +1,6 @@
 package com.family.tvguard;
 
+import android.annotation.TargetApi;
 import android.app.ActivityManager;
 import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
@@ -61,7 +62,7 @@ final class DeviceProtection {
 
     static boolean isUninstallBlocked(Context ctx) {
         // A plain administrator cannot query an owner policy using its component name.
-        if (!isDeviceOwner(ctx)) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP || !isDeviceOwner(ctx)) {
             return false;
         }
         String operation = "查询禁止卸载";
@@ -76,6 +77,9 @@ final class DeviceProtection {
     }
 
     static boolean isLockTaskAllowed(Context ctx) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+            return false;
+        }
         String operation = "查询锁定任务白名单";
         try {
             DevicePolicyManager manager = dpm(ctx);
@@ -89,7 +93,7 @@ final class DeviceProtection {
     }
 
     static boolean isUserControlBlocked(Context ctx) {
-        if (!isDeviceOwner(ctx)) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP || !isDeviceOwner(ctx)) {
             return false;
         }
         String operation = "查询强停和清数据限制";
@@ -111,7 +115,8 @@ final class DeviceProtection {
 
     /** Does not change other packages' entries or race a parent's in-progress removal. */
     static synchronized void applyIfOwner(Context ctx) {
-        if (!new Prefs(ctx).isProtectionEnabled() || AdminSession.isRemovalInProgress()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP
+                || !new Prefs(ctx).isProtectionEnabled() || AdminSession.isRemovalInProgress()
                 || !isDeviceOwner(ctx)) {
             return;
         }
@@ -196,14 +201,20 @@ final class DeviceProtection {
             require(activityManager != null, "任务管理服务不可用，无法核实锁定模式");
             boolean inLockTask = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
                     ? activityManager.getLockTaskModeState() != ActivityManager.LOCK_TASK_MODE_NONE
-                    : activityManager.isInLockTaskMode();
+                    : Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP
+                            && activityManager.isInLockTaskMode();
             require(!inLockTask, "请先从原锁屏界面退出锁定任务，再解除设备管理");
             ComponentName admin = admin(ctx);
             String self = ctx.getPackageName();
-            require(!manager.isProfileOwnerApp(self), "本应用是工作资料所有者，不能按普通设备管理员解除");
+            require(Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP
+                    || !manager.isProfileOwnerApp(self), "本应用是工作资料所有者，不能按普通设备管理员解除");
             clearError(operation);
 
             if (manager.isDeviceOwnerApp(self)) {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+                    throw new IllegalStateException(
+                            "Android 4.4 不支持安全解除设备所有者，已保留管理身份和电视数据");
+                }
                 operation = "解除强停和清数据限制";
                 List<String> controlledPackages = new ArrayList<>();
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -269,6 +280,7 @@ final class DeviceProtection {
     }
 
     /** Android 5–7 expose this as a public @hide method; it became a public SDK API in 26. */
+    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
     private static List<String> lockTaskPackages(DevicePolicyManager manager, ComponentName admin)
             throws Exception {
         String[] packages;
@@ -295,6 +307,7 @@ final class DeviceProtection {
         return restrictions;
     }
 
+    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
     private static void setAppsControlRestriction(Context ctx, DevicePolicyManager manager,
                                                    ComponentName admin, boolean restricted) {
         boolean current = ownRestrictions(ctx, manager, admin)
@@ -361,7 +374,9 @@ final class DeviceProtection {
         boolean owner = isDeviceOwner(ctx);
         boolean active = isAdminActive(ctx);
         result.append("设备管理：").append(owner ? "设备所有者" : active ? "普通管理员" : "未启用");
-        if (owner) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+            result.append("\n防卸载/强停：Android 4.4 不支持系统级限制");
+        } else if (owner) {
             boolean sealed = isUninstallBlocked(ctx) && isUserControlBlocked(ctx);
             result.append("\n禁止卸载/强停：").append(sealed ? "已生效" : "未完全生效");
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
@@ -379,9 +394,11 @@ final class DeviceProtection {
                 int mode = manager.getLockTaskModeState();
                 result.append(mode == ActivityManager.LOCK_TASK_MODE_LOCKED ? "系统 Lock Task"
                         : mode == ActivityManager.LOCK_TASK_MODE_PINNED ? "屏幕固定（可以退出）" : "未进入");
-            } else {
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 result.append(manager.isInLockTaskMode()
                         ? "已进入任务限制（Android 5 无法区分屏幕固定）" : "未进入");
+            } else {
+                result.append("Android 4.4 不支持系统 Lock Task");
             }
             clearError(operation);
         } catch (RuntimeException e) {

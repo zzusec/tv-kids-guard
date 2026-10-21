@@ -53,6 +53,50 @@ public class DeviceProtectionTest {
     }
 
     @Test
+    @Config(sdk = 19)
+    public void kitKatReportsUnavailablePoliciesWithoutCallingModernApis() {
+        policy.setDeviceOwner(admin);
+
+        DeviceProtection.applyIfOwner(context);
+
+        assertFalse(DeviceProtection.isUninstallBlocked(context));
+        assertFalse(DeviceProtection.isUserControlBlocked(context));
+        assertFalse(DeviceProtection.isLockTaskAllowed(context));
+        assertEquals(0, policy.uninstallQueryCount);
+        assertTrue(DeviceProtection.describe(context).contains("Android 4.4 不支持系统级限制"));
+        assertTrue(DeviceProtection.describe(context).contains("Android 4.4 不支持系统 Lock Task"));
+        assertEquals("", DeviceProtection.lastError());
+    }
+
+    @Test
+    @Config(sdk = 19)
+    public void kitKatOwnerRemovalFailsSafelyWithoutClearingIdentity() {
+        policy.setDeviceOwner(admin);
+        authorizeRemoval();
+
+        DeviceProtection.RemovalResult result = DeviceProtection.remove(context);
+
+        assertFalse(result.success);
+        assertFalse(result.needsRetry);
+        assertTrue(result.message.contains("Android 4.4 不支持安全解除设备所有者"));
+        assertTrue(DeviceProtection.isDeviceOwner(context));
+        assertEquals(0, policy.clearOwnerCount);
+    }
+
+    @Test
+    @Config(sdk = 19)
+    public void kitKatWithoutOwnerCanFinishAuthenticatedRemoval() {
+        policy.setActiveAdmin(admin);
+        authorizeRemoval();
+
+        DeviceProtection.RemovalResult result = DeviceProtection.remove(context);
+
+        assertTrue(result.success);
+        assertFalse(DeviceProtection.isAdminActive(context));
+        assertEquals("", DeviceProtection.lastError());
+    }
+
+    @Test
     public void nonOwnerDoesNotQueryOwnerOnlyUninstallPolicy() {
         policy.failUninstallQuery = true;
         assertFalse(DeviceProtection.isUninstallBlocked(context));
@@ -218,6 +262,7 @@ public class DeviceProtectionTest {
     }
 
     @Test
+    @Config(sdk = {19, 33})
     public void ordinaryAdminRemovalReportsPendingUntilSystemConfirms() {
         policy.setActiveAdmin(admin);
         policy.delayAdminRemoval = true;

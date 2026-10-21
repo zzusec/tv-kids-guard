@@ -1,5 +1,6 @@
 package com.family.tvguard;
 
+import android.annotation.TargetApi;
 import android.app.Activity;
 import android.app.PendingIntent;
 import android.content.ComponentName;
@@ -20,6 +21,8 @@ import android.provider.Settings;
 import android.util.Log;
 
 import java.io.FileInputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.List;
@@ -50,6 +53,7 @@ final class UpdateInstaller {
         int versionCode;
         boolean committed;
         boolean confirmationLaunched;
+        File legacyFile;
 
         Attempt(long generation) {
             this.generation = generation;
@@ -148,61 +152,73 @@ final class UpdateInstaller {
             if (permissionIntent(context) != null) {
                 throw new IOException("请先在系统设置允许安装来源，再重试安装");
             }
-            PackageInstaller installer = context.getPackageManager().getPackageInstaller();
-            PackageInstaller.SessionParams params =
-                    new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
-            params.setAppPackageName(context.getPackageName());
-            params.setSize(update.apk.length());
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED);
-            }
-            synchronized (LOCK) {
-                checkAuthorization(attempt);
-                attempt.versionCode = update.versionCode;
-                attempt.sessionId = installer.createSession(params);
-                persist(context, attempt, "正在准备系统安装");
-            }
-            try (PackageInstaller.Session session = installer.openSession(attempt.sessionId)) {
-                checkAuthorization(attempt);
-                try (FileInputStream input = new FileInputStream(update.apk);
-                     OutputStream output = session.openWrite("base.apk", 0, update.apk.length())) {
-                    byte[] buffer = new byte[64 * 1024];
-                    int count;
-                    while ((count = input.read(buffer)) != -1) {
-                        checkAuthorization(attempt);
-                        output.write(buffer, 0, count);
-                    }
-                    session.fsync(output);
-                }
-                checkAuthorization(attempt);
-                PendingIntent result = callback(context, attempt.sessionId, attempt.token);
-                // Serialize the last lease check with revoke()/expiry. No invalidated attempt
-                // may commit, including one canceled while readyUpdate() was hashing the APK.
-                synchronized (LOCK) {
-                    synchronized (AdminSession.class) {
-                        checkAuthorization(attempt);
-                        persist(context, attempt, "等待系统安装确认");
-                        // Preference fsync/binder work above can itself consume the lease.
-                        checkAuthorization(attempt);
-                        attempt.committed = true;
-                        session.commit(result.getIntentSender());
-                    }
-                }
+            if (Build.VERSION.SDK_INT < 21) {
+                installLegacy(context, attempt, update);
+            } else {
+                Api21.install(context, attempt, update);
             }
         } catch (Exception e) {
             finish(context, attempt, "安装未完成：" + detail(e), true);
         }
     }
 
-    static PendingIntent callback(Context context, int sessionId, String token) {
-        Intent intent = new Intent(context, UpdateInstallReceiver.class)
-                .setAction(ACTION_INSTALL_STATUS).setData(callbackUri(context, sessionId, token));
-        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            flags |= PendingIntent.FLAG_MUTABLE;
+    private static void installLegacy(Context context, Attempt attempt, UpdateManager.ReadyUpdate update) throws Exception {
+        checkAuthorization(attempt);
+        attempt.versionCode = update.versionCode;
+        attempt.legacyFile = new File(context.getFilesDir(), "tvguard-install-" + attempt.token + ".apk");
+        persist(context, attempt, "正在准备系统安装");
+        // Android 4.4's installer rejects content: URIs. Only this public release APK is made
+        // readable, never writable, outside our UID; the private downloaded original stays private.
+        try (FileInputStream input = new FileInputStream(update.apk);
+             FileOutputStream output = context.openFileOutput(attempt.legacyFile.getName(), Context.MODE_PRIVATE)) {
+            byte[] buffer = new byte[64 * 1024];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                checkAuthorization(attempt);
+                output.write(buffer, 0, count);
+            }
+            output.getFD().sync();
         }
-        // Not ONE_SHOT: pending-user-action is followed by a separate terminal callback.
-        return PendingIntent.getBroadcast(context, sessionId, intent, flags);
+        UpdateManager.validateApk(context, attempt.legacyFile, update.metadata, new UpdateManager.Cancellation());
+        checkAuthorization(attempt);
+        Intent confirmation = legacyConfirmation(context, attempt.legacyFile);
+        if (!attempt.legacyFile.setReadable(true, false)) throw new IOException("无法向系统安装器提供更新文件");
+        persist(context, attempt, "等待系统安装确认");
+        MAIN.post(() -> {
+            synchronized (LOCK) {
+                synchronized (AdminSession.class) {
+                    if (active != attempt) return;
+                    try {
+                        checkAuthorization(attempt);
+                        if (!MainActivity.launchUpdateConfirmation(confirmation)) {
+                            throw new IOException("系统安装确认未打开，请回家长页面重试");
+                        }
+                        attempt.confirmationLaunched = true;
+                    } catch (Exception e) {
+                        finish(context, attempt, "安装未完成：" + detail(e), true);
+                    }
+                }
+            }
+        });
+    }
+
+    static Intent legacyConfirmation(Context context, File apk) throws IOException {
+        Intent intent = new Intent(Intent.ACTION_INSTALL_PACKAGE)
+                .setDataAndType(Uri.fromFile(apk), "application/vnd.android.package-archive");
+        for (ResolveInfo match : context.getPackageManager().queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)) {
+            ActivityInfo info = match.activityInfo;
+            if (usableSettingsActivity(info)
+                    && (info.permission == null || context.checkCallingOrSelfPermission(info.permission)
+                    == PackageManager.PERMISSION_GRANTED)) {
+                return intent.setComponent(new ComponentName(info.packageName, info.name));
+            }
+        }
+        throw new IOException("系统没有可用的 APK 安装确认页面，请在电视上手动更新");
+    }
+
+    static PendingIntent callback(Context context, int sessionId, String token) {
+        if (Build.VERSION.SDK_INT < 21) throw new IllegalStateException("系统不支持安装会话回调");
+        return Api21.callback(context, sessionId, token);
     }
 
     private static Uri callbackUri(Context context, int sessionId, String token) {
@@ -214,90 +230,21 @@ final class UpdateInstaller {
     static void receive(Context context, Intent intent, Runnable complete) {
         WORKER.execute(() -> {
             try {
-                handleStatus(context, intent);
+                if (Build.VERSION.SDK_INT >= 21) Api21.handleStatus(context, intent);
             } catch (Exception e) {
                 Log.e(TAG, "安装回调处理失败", e);
                 Attempt attempt;
                 synchronized (LOCK) {
                     attempt = active;
                 }
-                if (attempt != null && matches(context, intent, attempt.sessionId, attempt.token)) {
+                if (Build.VERSION.SDK_INT >= 21 && attempt != null
+                        && Api21.matches(context, intent, attempt.sessionId, attempt.token)) {
                     finish(context, attempt, "安装回调失败：" + detail(e), true);
                 }
             } finally {
                 complete.run();
             }
         });
-    }
-
-    private static boolean matches(Context context, Intent intent, int sessionId, String token) {
-        return intent != null && ACTION_INSTALL_STATUS.equals(intent.getAction())
-                && sessionId >= 0 && token != null
-                && callbackUri(context, sessionId, token).equals(intent.getData())
-                && intent.hasExtra(PackageInstaller.EXTRA_SESSION_ID)
-                && intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1) == sessionId;
-    }
-
-    private static void handleStatus(Context context, Intent intent) throws Exception {
-        Attempt attempt;
-        synchronized (LOCK) {
-            attempt = active;
-        }
-        if (attempt == null) {
-            SharedPreferences store = store(context);
-            if (matches(context, intent, store.getInt("session", -1), store.getString("token", null))) {
-                cleanOldSessions(context, null);
-            }
-            return;
-        }
-        if (!matches(context, intent, attempt.sessionId, attempt.token) || !attempt.committed
-                || !intent.hasExtra(PackageInstaller.EXTRA_STATUS)) {
-            return;
-        }
-        String packageName = intent.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME);
-        if (packageName != null && !context.getPackageName().equals(packageName)) {
-            return;
-        }
-        int status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, Integer.MIN_VALUE);
-        if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
-            Intent confirmation = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                    ? intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent.class)
-                    : intent.getParcelableExtra(Intent.EXTRA_INTENT);
-            MAIN.post(() -> {
-                synchronized (LOCK) {
-                    if (active != attempt || attempt.confirmationLaunched) {
-                        return;
-                    }
-                    boolean launched = false;
-                    if (confirmation != null && authorized()) {
-                        try {
-                            launched = MainActivity.launchUpdateConfirmation(confirmation);
-                        } catch (RuntimeException e) {
-                            Log.w(TAG, "无法打开系统安装确认", e);
-                        }
-                    }
-                    if (launched) {
-                        attempt.confirmationLaunched = true;
-                    } else {
-                        finish(context, attempt, "安装确认未打开，请回家长页面重试", true);
-                    }
-                }
-            });
-        } else if (status == PackageInstaller.STATUS_SUCCESS) {
-            if (installedVersion(context) >= attempt.versionCode) {
-                UpdateManager.reconcileInstalled(context);
-                finish(context, attempt, "更新已安装", false);
-            } else {
-                finish(context, attempt, "系统报告成功，但已安装版本未更新，请重试", true);
-            }
-        } else if (status >= PackageInstaller.STATUS_FAILURE
-                && status <= PackageInstaller.STATUS_FAILURE_INCOMPATIBLE) {
-            String message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE);
-            finish(context, attempt, "安装未完成（" + status + "）"
-                    + (message == null ? "" : "：" + concise(message)), true);
-        } else if (status == PackageInstaller.STATUS_FAILURE_TIMEOUT) {
-            finish(context, attempt, "安装超时，请重试", true);
-        }
     }
 
     static boolean hasActiveSession(Context context) {
@@ -344,31 +291,26 @@ final class UpdateInstaller {
         SharedPreferences store = store(context);
         int oldId = store.getInt("session", -1);
         int target = store.getInt("version", 0);
-        boolean old = oldId >= 0 && (keep == null || oldId != keep.sessionId);
+        boolean old = (oldId >= 0 || store.contains("legacyFile"))
+                && (keep == null || !keep.token.equals(store.getString("token", null)));
         boolean installed = old && target > 0 && installedVersion(context) >= target;
         if (installed) {
             UpdateManager.reconcileInstalled(context);
         }
-        PackageInstaller installer = context.getPackageManager().getPackageInstaller();
-        for (PackageInstaller.SessionInfo info : installer.getMySessions()) {
-            if (info.getSessionId() != oldId
-                    && !context.getPackageName().equals(info.getAppPackageName())) {
-                continue;
-            }
-            synchronized (LOCK) {
-                if (active != null && info.getSessionId() == active.sessionId) {
-                    continue;
-                }
-            }
-            String error = abandon(context, info.getSessionId());
-            if (error != null) {
-                throw new IOException(error);
+        if (Build.VERSION.SDK_INT >= 21) Api21.cleanSessions(context, oldId);
+        File[] staged = context.getFilesDir().listFiles();
+        if (staged == null) throw new IOException("无法检查旧版安装临时文件");
+        for (File file : staged) {
+            if (file.getName().matches("tvguard-install-[a-f0-9-]{36}\\.apk")
+                    && (keep == null || !file.equals(keep.legacyFile))) {
+                String error = deleteLegacy(file);
+                if (error != null) throw new IOException(error);
             }
         }
         if (old) {
             synchronized (LOCK) {
                 if (active == null || active == keep) {
-                    if (!store.edit().remove("session").remove("token").remove("version")
+                    if (!store.edit().remove("session").remove("token").remove("version").remove("legacyFile")
                             .putString("status", installed ? "更新已安装" : "上次安装会话已清理，可重试")
                             .commit()) {
                         throw new IOException("无法保存安装会话恢复结果");
@@ -406,13 +348,25 @@ final class UpdateInstaller {
         WORKER.execute(() -> {
             String cleanupError = abandon && attempt.sessionId >= 0
                     ? abandon(context, attempt.sessionId) : null;
+            String finalStatus = status;
+            if (attempt.legacyFile != null) {
+                cleanupError = deleteLegacy(attempt.legacyFile);
+                try {
+                    if (installedVersion(context) >= attempt.versionCode) {
+                        UpdateManager.reconcileInstalled(context);
+                        finalStatus = "更新已安装";
+                    }
+                } catch (PackageManager.NameNotFoundException e) {
+                    cleanupError = "无法核对已安装版本：" + detail(e);
+                }
+            }
             synchronized (LOCK) {
                 if (generation == attempt.generation) {
                     SharedPreferences.Editor edit = store(context).edit();
                     if (cleanupError == null) {
-                        edit.remove("session").remove("token").remove("version");
+                        edit.remove("session").remove("token").remove("version").remove("legacyFile");
                     }
-                    edit.putString("status", cleanupError == null ? status : cleanupError);
+                    edit.putString("status", cleanupError == null ? finalStatus : cleanupError);
                     if (!edit.commit()) {
                         Log.e(TAG, "无法保存安装结束状态");
                     }
@@ -437,21 +391,181 @@ final class UpdateInstaller {
         }
     }
 
+    private static String deleteLegacy(File file) {
+        if (!file.exists()) return null;
+        boolean revoked = file.setReadable(false, false);
+        if (file.delete()) return null;
+        return revoked ? "无法清理旧版安装临时文件，已撤回读取权限"
+                : "无法清理旧版安装临时文件或撤回读取权限";
+    }
+
     private static String abandon(Context context, int id) {
-        try {
-            context.getPackageManager().getPackageInstaller().abandonSession(id);
-            return null;
-        } catch (RuntimeException e) {
-            // A committed/replaced session can already be gone. Only ignore that confirmed case.
-            try {
-                if (context.getPackageManager().getPackageInstaller().getSessionInfo(id) == null) {
-                    return null;
-                }
-            } catch (RuntimeException queryError) {
-                e.addSuppressed(queryError);
+        return Build.VERSION.SDK_INT >= 21 ? Api21.abandon(context, id) : null;
+    }
+
+    // KitKat must not verify methods mentioning PackageInstaller or its nested types.
+    @TargetApi(21)
+    private static final class Api21 {
+        static void install(Context context, Attempt attempt, UpdateManager.ReadyUpdate update) throws Exception {
+            PackageInstaller installer = context.getPackageManager().getPackageInstaller();
+            PackageInstaller.SessionParams params =
+                    new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+            params.setAppPackageName(context.getPackageName());
+            params.setSize(update.apk.length());
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED);
             }
-            Log.e(TAG, "无法清理安装会话 " + id, e);
-            return "无法清理安装会话 " + id + "：" + detail(e);
+            synchronized (LOCK) {
+                checkAuthorization(attempt);
+                attempt.versionCode = update.versionCode;
+                attempt.sessionId = installer.createSession(params);
+                persist(context, attempt, "正在准备系统安装");
+            }
+            try (PackageInstaller.Session session = installer.openSession(attempt.sessionId)) {
+                checkAuthorization(attempt);
+                try (FileInputStream input = new FileInputStream(update.apk);
+                     OutputStream output = session.openWrite("base.apk", 0, update.apk.length())) {
+                    byte[] buffer = new byte[64 * 1024];
+                    int count;
+                    while ((count = input.read(buffer)) != -1) {
+                        checkAuthorization(attempt);
+                        output.write(buffer, 0, count);
+                    }
+                    session.fsync(output);
+                }
+                checkAuthorization(attempt);
+                PendingIntent result = callback(context, attempt.sessionId, attempt.token);
+                // Serialize the last lease check with revoke()/expiry. No invalidated attempt
+                // may commit, including one canceled while readyUpdate() was hashing the APK.
+                synchronized (LOCK) {
+                    synchronized (AdminSession.class) {
+                        checkAuthorization(attempt);
+                        persist(context, attempt, "等待系统安装确认");
+                        // Preference fsync/binder work above can itself consume the lease.
+                        checkAuthorization(attempt);
+                        attempt.committed = true;
+                        session.commit(result.getIntentSender());
+                    }
+                }
+            }
+        }
+
+        static PendingIntent callback(Context context, int sessionId, String token) {
+            Intent intent = new Intent(context, UpdateInstallReceiver.class)
+                    .setAction(ACTION_INSTALL_STATUS).setData(callbackUri(context, sessionId, token));
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                flags |= PendingIntent.FLAG_MUTABLE;
+            }
+            // Not ONE_SHOT: pending-user-action is followed by a separate terminal callback.
+            return PendingIntent.getBroadcast(context, sessionId, intent, flags);
+        }
+
+        private static boolean matches(Context context, Intent intent, int sessionId, String token) {
+            return intent != null && ACTION_INSTALL_STATUS.equals(intent.getAction())
+                    && sessionId >= 0 && token != null
+                    && callbackUri(context, sessionId, token).equals(intent.getData())
+                    && intent.hasExtra(PackageInstaller.EXTRA_SESSION_ID)
+                    && intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1) == sessionId;
+        }
+
+        private static void handleStatus(Context context, Intent intent) throws Exception {
+            Attempt attempt;
+            synchronized (LOCK) {
+                attempt = active;
+            }
+            if (attempt == null) {
+                SharedPreferences store = store(context);
+                if (matches(context, intent, store.getInt("session", -1), store.getString("token", null))) {
+                    cleanOldSessions(context, null);
+                }
+                return;
+            }
+            if (!matches(context, intent, attempt.sessionId, attempt.token) || !attempt.committed
+                    || !intent.hasExtra(PackageInstaller.EXTRA_STATUS)) {
+                return;
+            }
+            String packageName = intent.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME);
+            if (packageName != null && !context.getPackageName().equals(packageName)) {
+                return;
+            }
+            int status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, Integer.MIN_VALUE);
+            if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+                Intent confirmation = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                        ? intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent.class)
+                        : intent.getParcelableExtra(Intent.EXTRA_INTENT);
+                MAIN.post(() -> {
+                    synchronized (LOCK) {
+                        if (active != attempt || attempt.confirmationLaunched) {
+                            return;
+                        }
+                        boolean launched = false;
+                        if (confirmation != null && authorized()) {
+                            try {
+                                launched = MainActivity.launchUpdateConfirmation(confirmation);
+                            } catch (RuntimeException e) {
+                                Log.w(TAG, "无法打开系统安装确认", e);
+                            }
+                        }
+                        if (launched) {
+                            attempt.confirmationLaunched = true;
+                        } else {
+                            finish(context, attempt, "安装确认未打开，请回家长页面重试", true);
+                        }
+                    }
+                });
+            } else if (status == PackageInstaller.STATUS_SUCCESS) {
+                if (installedVersion(context) >= attempt.versionCode) {
+                    UpdateManager.reconcileInstalled(context);
+                    finish(context, attempt, "更新已安装", false);
+                } else {
+                    finish(context, attempt, "系统报告成功，但已安装版本未更新，请重试", true);
+                }
+            } else if (status >= PackageInstaller.STATUS_FAILURE
+                    && status <= PackageInstaller.STATUS_FAILURE_INCOMPATIBLE) {
+                String message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE);
+                finish(context, attempt, "安装未完成（" + status + "）"
+                        + (message == null ? "" : "：" + concise(message)), true);
+            } else if (status == PackageInstaller.STATUS_FAILURE_TIMEOUT) {
+                finish(context, attempt, "安装超时，请重试", true);
+            }
+        }
+
+        static void cleanSessions(Context context, int oldId) throws IOException {
+            PackageInstaller installer = context.getPackageManager().getPackageInstaller();
+            for (PackageInstaller.SessionInfo info : installer.getMySessions()) {
+                if (info.getSessionId() != oldId
+                        && !context.getPackageName().equals(info.getAppPackageName())) {
+                    continue;
+                }
+                synchronized (LOCK) {
+                    if (active != null && info.getSessionId() == active.sessionId) {
+                        continue;
+                    }
+                }
+                String error = abandon(context, info.getSessionId());
+                if (error != null) {
+                    throw new IOException(error);
+                }
+            }
+        }
+
+        private static String abandon(Context context, int id) {
+            try {
+                context.getPackageManager().getPackageInstaller().abandonSession(id);
+                return null;
+            } catch (RuntimeException e) {
+                // A committed/replaced session can already be gone. Only ignore that confirmed case.
+                try {
+                    if (context.getPackageManager().getPackageInstaller().getSessionInfo(id) == null) {
+                        return null;
+                    }
+                } catch (RuntimeException queryError) {
+                    e.addSuppressed(queryError);
+                }
+                Log.e(TAG, "无法清理安装会话 " + id, e);
+                return "无法清理安装会话 " + id + "：" + detail(e);
+            }
         }
     }
 
@@ -467,6 +581,7 @@ final class UpdateInstaller {
 
     private static void persist(Context context, Attempt attempt, String status) throws IOException {
         if (!store(context).edit().putInt("session", attempt.sessionId).putString("token", attempt.token)
+                .putString("legacyFile", attempt.legacyFile == null ? null : attempt.legacyFile.getName())
                 .putInt("version", attempt.versionCode).putString("status", status).commit()) {
             throw new IOException("无法保存安装会话");
         }

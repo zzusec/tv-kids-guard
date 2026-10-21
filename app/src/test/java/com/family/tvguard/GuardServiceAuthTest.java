@@ -27,9 +27,11 @@ import org.robolectric.shadows.ShadowActivity;
 import org.robolectric.shadows.ShadowActivityManager;
 import org.robolectric.shadows.ShadowLooper;
 import org.robolectric.shadows.ShadowPowerManager;
+import org.robolectric.shadows.ShadowSystemClock;
 import org.robolectric.util.ReflectionHelpers;
 
 import java.util.concurrent.TimeUnit;
+import java.time.Duration;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -83,6 +85,7 @@ public class GuardServiceAuthTest {
     }
 
     @Test
+    @Config(sdk = {19, 24, 33})
     public void factoryPinOnlyOpensSetupAndDoesNotGrantUnlimitedViewing() {
         GuardService service = startService();
         while (org.robolectric.Shadows.shadowOf(service).getNextStartedActivity() != null) {
@@ -120,6 +123,7 @@ public class GuardServiceAuthTest {
     }
 
     @Test
+    @Config(sdk = {19, 24, 33})
     public void configuredParentPinStillReleasesTodaysQuota() {
         prefs.setPassword("135790");
         GuardService service = startService();
@@ -239,6 +243,55 @@ public class GuardServiceAuthTest {
         assertTrue(prefs.isGuardActive());
         // A dark screen is not viewing time.
         assertEquals(Prefs.DEFAULT_LIMIT_MINUTES * 60L, prefs.getUsedSeconds());
+    }
+
+    @Test
+    @Config(sdk = 19)
+    public void kitKatCountsOnlyScreenOnTimeAndPersistsAcrossRestart() {
+        prefs.setLocked(false);
+        prefs.setUsedSeconds(0L);
+        GuardService service = startService();
+        pauseAutomaticTicks(service);
+        powerShadow().turnScreenOn(true);
+        ShadowLooper.idleMainLooper();
+
+        advanceCounting(service, 5);
+        assertEquals(5L, prefs.getUsedSeconds());
+        powerShadow().turnScreenOn(false);
+        ShadowLooper.idleMainLooper();
+        advanceCounting(service, 5);
+        assertEquals(5L, prefs.getUsedSeconds());
+        assertFalse(service.isLocked());
+
+        serviceController.destroy();
+        serviceController = null;
+        service = startService();
+        pauseAutomaticTicks(service);
+        assertFalse(service.isLocked());
+        assertEquals(5L, prefs.getUsedSeconds());
+        powerShadow().turnScreenOn(true);
+        ShadowLooper.idleMainLooper();
+        advanceCounting(service, 5);
+        assertEquals(10L, prefs.getUsedSeconds());
+    }
+
+    @Test
+    @Config(sdk = 19)
+    public void kitKatLocksAtTheQuotaWithoutUnlockingOnServiceRestart() {
+        prefs.setLocked(false);
+        prefs.setUsedSeconds(Prefs.DEFAULT_LIMIT_MINUTES * 60L - 1L);
+        GuardService service = startService();
+        powerShadow().turnScreenOn(true);
+
+        ShadowLooper.idleMainLooper(2, TimeUnit.SECONDS);
+
+        assertTrue(service.isLocked());
+        assertTrue(prefs.isLocked());
+        assertEquals(Prefs.DEFAULT_LIMIT_MINUTES * 60L, prefs.getUsedSeconds());
+        serviceController.destroy();
+        serviceController = null;
+        assertTrue(startService().isLocked());
+        assertFalse(prefs.isUnlockedToday());
     }
 
     /** However the screen was blanked, the lock is the first thing back when it lights up. */
@@ -374,6 +427,20 @@ public class GuardServiceAuthTest {
     private GuardService startService() {
         serviceController = Robolectric.buildService(GuardService.class).create();
         return serviceController.get();
+    }
+
+    private void pauseAutomaticTicks(GuardService service) {
+        android.os.Handler handler = ReflectionHelpers.getField(service, "handler");
+        handler.removeCallbacks(ReflectionHelpers.getField(service, "ticker"));
+        ShadowLooper.idleMainLooper();
+    }
+
+    private void advanceCounting(GuardService service, int seconds) {
+        // KitKat layout traversal also advances Robolectric's clock; isolate the counting ticks.
+        for (int i = 0; i < seconds; i++) {
+            ShadowSystemClock.advanceBy(Duration.ofSeconds(1));
+            ReflectionHelpers.callInstanceMethod(service, "tick");
+        }
     }
 
     private LockActivity startLock() {

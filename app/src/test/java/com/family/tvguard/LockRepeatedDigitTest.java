@@ -23,7 +23,7 @@ import static org.junit.Assert.assertTrue;
 
 /** Separate presses of the same remote digit must survive UI and service refreshes. */
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = {24, 33}, qualifiers = "w960dp-h540dp-land")
+@Config(sdk = {19, 24, 33}, qualifiers = "w960dp-h540dp-land")
 @LooperMode(LooperMode.Mode.PAUSED)
 public class LockRepeatedDigitTest {
     private ServiceController<GuardService> serviceController;

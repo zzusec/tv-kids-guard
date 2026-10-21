@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.os.Build;
 import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.style.TextAppearanceSpan;
@@ -37,7 +38,10 @@ public final class RemoteKeypad {
         boolean danger = "44".equals(code);
         Context context = button.getContext();
         button.setBackgroundResource(danger ? R.drawable.parent_danger_bg : R.drawable.parent_button_bg);
-        button.setBackgroundTintList(null);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            button.setBackgroundTintList(null);
+            button.setStateListAnimator(null);
+        }
         int ink = context.getResources().getColor(danger ? R.color.panel_red : R.color.panel_ink);
         int blue = context.getResources().getColor(danger ? R.color.panel_red : R.color.panel_blue_text);
         button.setTextColor(actionColors(ink, Color.WHITE));
@@ -51,7 +55,6 @@ public final class RemoteKeypad {
         button.setMinHeight(dp(context, 60));
         button.setMinimumHeight(dp(context, 60));
         button.setPadding(dp(context, 14), dp(context, 12), dp(context, 14), dp(context, 12));
-        button.setStateListAnimator(null);
         button.setFocusable(true);
         button.setFocusableInTouchMode(true);
         String title = code + " " + label;

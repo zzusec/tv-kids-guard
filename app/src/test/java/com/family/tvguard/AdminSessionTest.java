@@ -8,11 +8,13 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
+import org.robolectric.annotation.Config;
 import org.robolectric.shadows.ShadowSystemClock;
 
 import java.time.Duration;
 
 @RunWith(RobolectricTestRunner.class)
+@Config(sdk = {19, 24, 33})
 public class AdminSessionTest {
 
     @Before

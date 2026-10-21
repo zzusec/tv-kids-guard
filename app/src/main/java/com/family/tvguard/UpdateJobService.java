@@ -1,5 +1,6 @@
 package com.family.tvguard;
 
+import android.annotation.TargetApi;
 import android.app.job.JobParameters;
 import android.app.job.JobService;
 
@@ -7,6 +8,7 @@ import java.util.IdentityHashMap;
 import java.util.Map;
 
 /** Independent of GuardService and the protection toggle; all I/O runs on UpdateManager's worker. */
+@TargetApi(21)
 public final class UpdateJobService extends JobService {
     private final Map<JobParameters, UpdateManager.JobHandle> running = new IdentityHashMap<>();
 

@@ -67,7 +67,8 @@ public class LockActivity extends Activity {
     /** True while the panel is lit. The guard has nothing to say to a dark screen. */
     private static boolean isScreenOn(Context ctx) {
         PowerManager pm = (PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
-        return pm == null || pm.isInteractive();
+        return pm == null || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH
+                ? pm.isInteractive() : pm.isScreenOn());
     }
 
     static void dismiss() {
@@ -129,6 +130,9 @@ public class LockActivity extends Activity {
     }
 
     private void enterLockTask() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+            return; // KitKat has no managed Lock Task; the ordinary quota lock still applies.
+        }
         DeviceProtection.applyIfOwner(this);
         if (!DeviceProtection.isLockTaskAllowed(this)) {
             return; // Never substitute user-exitable screen pinning for a managed lock.
@@ -158,12 +162,12 @@ public class LockActivity extends Activity {
         }
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
                 ? am.getLockTaskModeState() != ActivityManager.LOCK_TASK_MODE_NONE
-                : am.isInLockTaskMode();
+                : Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && am.isInLockTaskMode();
     }
 
     private boolean releaseLockTask() {
         try {
-            if (lockTaskRunning()) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && lockTaskRunning()) {
                 stopLockTask();
                 if (lockTaskRunning()) {
                     throw new IllegalStateException("System lock task is still active");

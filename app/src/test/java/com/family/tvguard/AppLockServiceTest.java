@@ -28,7 +28,7 @@ import static org.junit.Assert.assertNull;
 import static org.robolectric.Shadows.shadowOf;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = 24)
+@Config(sdk = {19, 24})
 public class AppLockServiceTest {
 
     private Application context;
@@ -64,11 +64,18 @@ public class AppLockServiceTest {
     public void deleteAndPermissionIntentsUseTheApplicationPackageUri() {
         register(new Intent(Intent.ACTION_DELETE, selfUri()), "vendor.delete");
         register(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, selfUri()), "vendor.details");
-        register(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, selfUri()), "vendor.overlay");
-        for (String name : new String[]{"vendor.delete", "vendor.details", "vendor.overlay"}) {
+        for (String name : new String[]{"vendor.delete", "vendor.details"}) {
             window(name);
             assertGateStarted();
         }
+    }
+
+    @Test
+    @Config(sdk = 24)
+    public void overlayPermissionPageIsProtectedOnSystemsWithRuntimeOverlayPermission() {
+        register(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, selfUri()), "vendor.overlay");
+        window("vendor.overlay");
+        assertGateStarted();
     }
 
     @Test

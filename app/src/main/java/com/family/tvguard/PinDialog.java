@@ -5,6 +5,7 @@ import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -81,7 +82,9 @@ final class PinDialog extends Dialog {
         inputView.setTextColor(getContext().getResources().getColor(R.color.panel_blue_text));
         inputView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 36);
         inputView.setTypeface(Typeface.DEFAULT_BOLD);
-        inputView.setLetterSpacing(0.3f);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            inputView.setLetterSpacing(0.3f);
+        }
         inputView.setGravity(Gravity.CENTER);
         inputView.setMinHeight(Math.round(density * 72));
         inputView.setBackgroundResource(R.drawable.parent_input_bg);
