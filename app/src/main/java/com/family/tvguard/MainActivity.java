@@ -540,7 +540,7 @@ public class MainActivity extends Activity {
 
     private void promptDailyLimit() {
         showPin("每日时长", "当前 " + prefs.getDailyLimitMinutes() + " 分钟\n输入 1-"
-                + Prefs.MAX_LIMIT_MINUTES + " 分钟，按 OK 保存", 4, false, value -> {
+                + Prefs.MAX_LIMIT_MINUTES + " 分钟，选择「确认」保存", 4, false, value -> {
                     int minutes = Integer.parseInt(value);
                     if (minutes < 1 || minutes > Prefs.MAX_LIMIT_MINUTES) {
                         toast("请输入 1-" + Prefs.MAX_LIMIT_MINUTES + " 之间的分钟数");
@@ -573,7 +573,7 @@ public class MainActivity extends Activity {
             toast("今天最多增加 " + Prefs.MAX_BONUS_MINUTES + " 分钟");
             return;
         }
-        showPin("临时加时长", "仅对今天有效。输入 1-" + left + " 分钟，按 OK 确认", 2, false, value -> {
+        showPin("临时加时长", "仅对今天有效。输入 1-" + left + " 分钟，选择「确认」保存", 2, false, value -> {
             if (!canExecuteAction("22")) {
                 return;
             }

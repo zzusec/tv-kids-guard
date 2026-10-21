@@ -63,15 +63,17 @@ public class RemoteAuthTest {
     }
 
     @Test
-    public void pinSurfacesHaveNoEditableFieldOrOnScreenNumberKeys() {
+    public void pinSurfacesHaveAnOnScreenPadWithoutAnImeBackedField() {
         prefs.setPassword("135790");
         AdminAuthActivity activity = startAuth();
         assertRemoteOnlyInput(activity.findViewById(android.R.id.content));
+        assertNumericPad(activity.findViewById(android.R.id.content));
 
         List<String> values = new ArrayList<>();
         showDialog(true, 6, values);
         assertRemoteOnlyInput(dialog.getWindow().getDecorView());
-        digits(dialog, "13579");
+        assertNumericPad(dialog.getWindow().getDecorView());
+        virtualDigits(dialog, "13579");
         assertEquals("●●●●●", dialogInput());
         assertTrue(values.isEmpty());
         assertTrue(dialog.isShowing());
@@ -105,12 +107,11 @@ public class RemoteAuthTest {
     }
 
     @Test
-    public void parentGateUsesOnlyTheRemoteNumberKeys() {
+    public void parentGateStillAcceptsPhysicalNumberKeysAlongsideTheOnScreenPad() {
         prefs.setPassword("135790");
         AdminAuthActivity activity = startAuth();
 
-        // No on-screen keypad: a highlighted virtual key would reveal the PIN to the room.
-        assertNull(activity.findViewById(android.R.id.content)
+        assertNotNull(activity.findViewById(android.R.id.content)
                 .findViewWithTag("key_1"));
         digits(activity, "13");
         assertEquals("●●", ((TextView) activity.findViewById(R.id.lock_input)).getText().toString());
@@ -205,6 +206,82 @@ public class RemoteAuthTest {
     }
 
     @Test
+    public void directionOnlyDurationEntryCanDeleteAndConfirmWithoutNumberKeys() {
+        List<String> values = new ArrayList<>();
+        showDialog(false, 4, values);
+        virtualDigits(dialog, "123");
+        focusKey(dialog, "delete");
+        press(dialog, KeyEvent.KEYCODE_DPAD_CENTER);
+        assertEquals("12", dialogInput());
+        focusKey(dialog, "confirm");
+        assertEquals("12", dialogInput());
+        assertTrue(values.isEmpty());
+        press(dialog, KeyEvent.KEYCODE_DPAD_CENTER);
+        assertEquals(List.of("12"), values);
+        assertFalse(dialog.isShowing());
+    }
+
+    @Test
+    public void virtualPasswordMasksAndAutoSubmitsOnlyWhenSixDigitsAreEntered() {
+        List<String> values = new ArrayList<>();
+        showDialog(true, 6, values);
+        virtualDigits(dialog, "24681");
+        assertEquals("●●●●●", dialogInput());
+        assertTrue(values.isEmpty());
+        virtualDigits(dialog, "0");
+        assertEquals(List.of("246810"), values);
+        assertFalse(dialog.isShowing());
+    }
+
+    @Test
+    public void virtualOkAliasesActivateOnceOnReleaseAndIgnoreLongPressRepeats() {
+        List<String> values = new ArrayList<>();
+        showDialog(false, 8, values);
+        for (int code : new int[] {KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
+                KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_BUTTON_A,
+                KeyEvent.KEYCODE_BUTTON_SELECT}) {
+            String before = dialogInput();
+            send(dialog, new KeyEvent(KeyEvent.ACTION_DOWN, code));
+            send(dialog, new KeyEvent(0, 0, KeyEvent.ACTION_DOWN, code, 3));
+            assertEquals(before, dialogInput());
+            send(dialog, new KeyEvent(KeyEvent.ACTION_UP, code));
+            assertEquals(before + "1", dialogInput());
+            send(dialog, new KeyEvent(KeyEvent.ACTION_UP, code));
+            assertEquals(before + "1", dialogInput());
+        }
+        assertTrue(values.isEmpty());
+    }
+
+    @Test
+    public void canceledOrInterruptedVirtualOkCannotTypeADigit() {
+        List<String> values = new ArrayList<>();
+        showDialog(false, 4, values);
+        send(dialog, new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_CENTER));
+        send(dialog, new KeyEvent(0, 0, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_CENTER,
+                0, 0, 0, 0, KeyEvent.FLAG_CANCELED));
+        assertEquals("", dialogInput());
+        send(dialog, new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_CENTER));
+        press(dialog, KeyEvent.KEYCODE_DPAD_RIGHT);
+        send(dialog, new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_CENTER));
+        assertEquals("", dialogInput());
+        press(dialog, KeyEvent.KEYCODE_DPAD_CENTER);
+        assertEquals("2", dialogInput());
+    }
+
+    @Test
+    public void virtualConfirmOfPartialGatePinDoesNotCountAFailure() {
+        prefs.setPassword("135790");
+        AdminAuthActivity activity = startAuth();
+        virtualDigits(activity, "13");
+        focusKey(activity, "confirm");
+        press(activity, KeyEvent.KEYCODE_DPAD_CENTER);
+        assertEquals(0, prefs.getFailCount());
+        assertFalse(AdminSession.isActive());
+        assertTrue(((TextView) activity.findViewById(R.id.lock_prompt)).getText().toString()
+                .contains("请输入 6 位"));
+    }
+
+    @Test
     public void virtualParentPinUsesAuthenticationAndOpensConsole() {
         prefs.setPassword("135790");
         AdminAuthActivity activity = startAuth();
@@ -252,6 +329,8 @@ public class RemoteAuthTest {
         virtualDigits(activity, "111111111111111111");
         assertEquals(3, prefs.getFailCount());
         assertTrue(prefs.lockoutRemainingSeconds() > 0);
+        assertFalse(activity.findViewById(android.R.id.content).findViewWithTag("key_1").isEnabled());
+        activity.findViewById(android.R.id.content).findViewWithTag("key_1").performClick();
         digits(activity, "135790");
         press(activity, KeyEvent.KEYCODE_ENTER);
         assertFalse(AdminSession.isActive());
@@ -260,7 +339,8 @@ public class RemoteAuthTest {
         assertEquals("", ((TextView) activity.findViewById(R.id.lock_input)).getText().toString());
         prefs.clearFailures();
         ShadowLooper.idleMainLooper(1, java.util.concurrent.TimeUnit.SECONDS);
-        digits(activity, "135790");
+        assertTrue(activity.findViewById(android.R.id.content).findViewWithTag("key_1").isEnabled());
+        virtualDigits(activity, "135790");
         assertTrue(AdminSession.isActive());
         assertTrue(activity.isFinishing());
     }
@@ -323,8 +403,42 @@ public class RemoteAuthTest {
         ShadowLooper.idleMainLooper();
     }
 
-    private void virtualDigits(AdminAuthActivity activity, String value) {
-        digits(activity, value);
+    private void virtualDigits(Window.Callback target, String value) {
+        press(target, KeyEvent.KEYCODE_DPAD_UP);
+        for (char digit : value.toCharArray()) {
+            focusKey(target, String.valueOf(digit));
+            press(target, KeyEvent.KEYCODE_DPAD_CENTER);
+        }
+    }
+
+    private void focusKey(Window.Callback target, String suffix) {
+        Window window = target instanceof PinDialog ? ((PinDialog) target).getWindow()
+                : ((AdminAuthActivity) target).getWindow();
+        View wanted = window.getDecorView().findViewWithTag("key_" + suffix);
+        assertNotNull(wanted);
+        View focused = window.getDecorView().findFocus();
+        assertNotNull("Dpad-only entry needs an initial focus", focused);
+        int from = keyIndex(focused.getTag().toString());
+        int to = keyIndex(wanted.getTag().toString());
+        int row = from / 3;
+        int column = from % 3;
+        while (row != to / 3) {
+            press(target, row < to / 3 ? KeyEvent.KEYCODE_DPAD_DOWN : KeyEvent.KEYCODE_DPAD_UP);
+            row += row < to / 3 ? 1 : -1;
+        }
+        while (column != to % 3) {
+            press(target, column < to % 3 ? KeyEvent.KEYCODE_DPAD_RIGHT : KeyEvent.KEYCODE_DPAD_LEFT);
+            column += column < to % 3 ? 1 : -1;
+        }
+        assertSame("Dpad must reach the actual key button", wanted, window.getDecorView().findFocus());
+    }
+
+    private int keyIndex(String tag) {
+        String suffix = tag.substring("key_".length());
+        if (suffix.equals("delete")) return 9;
+        if (suffix.equals("confirm")) return 11;
+        int digit = Integer.parseInt(suffix);
+        return digit == 0 ? 10 : digit - 1;
     }
 
     private void focusDialog(String suffix) {
@@ -343,6 +457,18 @@ public class RemoteAuthTest {
     }
 
     private void press(Window.Callback target, int code) {
+        Object root = eventRoot(target);
+        for (int action : new int[] {KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP}) {
+            long now = SystemClock.uptimeMillis();
+            sendToRoot(root, new KeyEvent(now, now, action, code, 0));
+        }
+    }
+
+    private void send(Window.Callback target, KeyEvent event) {
+        sendToRoot(eventRoot(target), event);
+    }
+
+    private Object eventRoot(Window.Callback target) {
         Window window = target instanceof PinDialog ? ((PinDialog) target).getWindow()
                 : ((AdminAuthActivity) target).getWindow();
         Object root = ReflectionHelpers.callInstanceMethod(window.getDecorView(), "getViewRootImpl");
@@ -351,13 +477,13 @@ public class RemoteAuthTest {
             // KitKat drops events when Robolectric's unconnected IME reports NOT_HANDLED.
             ReflectionHelpers.setField(root, "mLastWasImTarget", false);
         }
-        long now = SystemClock.uptimeMillis();
-        for (int action : new int[] {KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP}) {
-            ReflectionHelpers.callInstanceMethod(root, "dispatchInputEvent",
-                    ReflectionHelpers.ClassParameter.from(InputEvent.class,
-                            new KeyEvent(now, now, action, code, 0)));
-            ShadowLooper.idleMainLooper();
-        }
+        return root;
+    }
+
+    private void sendToRoot(Object root, KeyEvent event) {
+        ReflectionHelpers.callInstanceMethod(root, "dispatchInputEvent",
+                ReflectionHelpers.ClassParameter.from(InputEvent.class, event));
+        ShadowLooper.idleMainLooper();
     }
 
     private String dialogInput() {
@@ -367,19 +493,22 @@ public class RemoteAuthTest {
 
     private void assertRemoteOnlyInput(View view) {
         assertFalse("Remote PIN input must not create an IME-backed field", view instanceof EditText);
-        if (view instanceof Button) {
-            assertFalse("PIN digits must never become selectable on-screen buttons",
-                    ((Button) view).getText().toString().trim().matches("[0-9]"));
-        }
-        for (int digit = 0; digit <= 9; digit++) {
-            assertNull(view.findViewWithTag("key_" + digit));
-        }
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
             for (int i = 0; i < group.getChildCount(); i++) {
                 assertRemoteOnlyInput(group.getChildAt(i));
             }
         }
+    }
+
+    private void assertNumericPad(View root) {
+        for (int digit = 0; digit <= 9; digit++) {
+            View key = root.findViewWithTag("key_" + digit);
+            assertTrue(key instanceof Button);
+            assertTrue(key.isFocusable());
+        }
+        assertNotNull(root.findViewWithTag("key_delete"));
+        assertNotNull(root.findViewWithTag("key_confirm"));
     }
 
     private boolean hasText(View view, String text) {

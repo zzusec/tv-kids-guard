@@ -25,15 +25,18 @@ import org.robolectric.Robolectric;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.android.controller.ActivityController;
+import org.robolectric.android.controller.ServiceController;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.LooperMode;
 import org.robolectric.shadows.ShadowDialog;
 import org.robolectric.shadows.ShadowLooper;
 import org.robolectric.shadows.ShadowViewRootImpl;
+import org.robolectric.shadows.ShadowSystemClock;
 import org.robolectric.shadow.api.Shadow;
 import org.robolectric.util.ReflectionHelpers;
 
 import java.util.concurrent.TimeUnit;
+import java.time.Duration;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -52,6 +55,7 @@ public class MainActivityRemoteTest {
     private Prefs prefs;
     private ActivityController<MainActivity> controller;
     private MainActivity activity;
+    private ServiceController<GuardService> serviceController;
 
     @Before
     public void setUp() {
@@ -72,6 +76,9 @@ public class MainActivityRemoteTest {
         }
         if (controller != null) {
             controller.pause().stop().destroy();
+        }
+        if (serviceController != null) {
+            serviceController.destroy();
         }
         UpdateInstaller.cancel(context);
         AdminSession.revoke();
@@ -134,6 +141,92 @@ public class MainActivityRemoteTest {
         assertEquals(45, prefs.getDailyLimitMinutes());
         assertFalse(prefs.isProtectionEnabled());
         assertEquals("45 分钟", ((TextView) activity.findViewById(R.id.daily_limit_value)).getText().toString());
+    }
+
+    @Test
+    public void directionOnlyDailyLimitSavesTheUpperBoundary() {
+        startPanel(false);
+        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_CENTER);
+        PinDialog dialog = latestPinDialog();
+        virtualDigits(dialog.getWindow(), "1440");
+        assertEquals(Prefs.DEFAULT_LIMIT_MINUTES, prefs.getDailyLimitMinutes());
+        virtualConfirm(dialog.getWindow());
+        assertFalse(dialog.isShowing());
+        assertEquals(1440, prefs.getDailyLimitMinutes());
+    }
+
+    @Test
+    public void directionOnlyDailyLimitRejectsZeroAndOverMaximum() {
+        startPanel(false);
+        for (String invalid : new String[] {"0", "1441"}) {
+            press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_CENTER);
+            PinDialog dialog = latestPinDialog();
+            virtualDigits(dialog.getWindow(), invalid);
+            virtualConfirm(dialog.getWindow());
+            assertEquals(Prefs.DEFAULT_LIMIT_MINUTES, prefs.getDailyLimitMinutes());
+        }
+    }
+
+    @Test
+    public void directionOnlyPasswordChangeReauthenticatesAndConfirmsTheNewPin() {
+        startPanel(false);
+        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_UP);
+        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_RIGHT);
+        assertFocused("11");
+        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_CENTER);
+        virtualDigits(latestPinDialog().getWindow(), "135790");
+        assertTrue(prefs.checkPassword("135790"));
+        virtualDigits(latestPinDialog().getWindow(), "246810");
+        assertTrue(prefs.checkPassword("135790"));
+        virtualDigits(latestPinDialog().getWindow(), "246810");
+        assertTrue(prefs.checkPassword("246810"));
+        assertFalse(prefs.checkPassword("135790"));
+        assertFalse(latestDialogIsShowing());
+    }
+
+    @Test
+    public void directionOnlyTemporaryBonusDoesNotChangeDailyLimit() {
+        serviceController = Robolectric.buildService(GuardService.class).create();
+        startPanel(true);
+        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_DOWN);
+        assertFocused("22");
+        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_CENTER);
+        virtualDigits(latestPinDialog().getWindow(), "15");
+        virtualConfirm(latestPinDialog().getWindow());
+        assertEquals(900L, prefs.getBonusSeconds());
+        assertEquals(Prefs.DEFAULT_LIMIT_MINUTES, prefs.getDailyLimitMinutes());
+        assertFalse(prefs.isUnlockedToday());
+    }
+
+    @Test
+    public void virtualConfirmationCannotSaveAfterParentSessionIsRevoked() {
+        startPanel(false);
+        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_CENTER);
+        PinDialog dialog = latestPinDialog();
+        virtualDigits(dialog.getWindow(), "45");
+        AdminSession.revoke();
+        virtualConfirm(dialog.getWindow());
+        assertEquals(Prefs.DEFAULT_LIMIT_MINUTES, prefs.getDailyLimitMinutes());
+        assertTrue(activity.isFinishing());
+        Intent gate = shadowOf(activity).getNextStartedActivity();
+        assertNotNull(gate);
+        assertEquals(AdminAuthActivity.class.getName(), gate.getComponent().getClassName());
+    }
+
+    @Test
+    public void virtualConfirmationRechecksASessionThatExpiresWhileOkIsHeld() {
+        startPanel(false);
+        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_CENTER);
+        PinDialog dialog = latestPinDialog();
+        Window window = dialog.getWindow();
+        virtualDigits(window, "45");
+        focusVirtualKey(window, "key_confirm");
+        send(window, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_CENTER);
+        ShadowSystemClock.advanceBy(Duration.ofMinutes(4));
+        send(window, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_CENTER);
+        assertEquals(Prefs.DEFAULT_LIMIT_MINUTES, prefs.getDailyLimitMinutes());
+        assertTrue(activity.isFinishing());
+        assertFalse(AdminSession.isActive());
     }
 
     @Test
@@ -416,6 +509,49 @@ public class MainActivityRemoteTest {
         assertTrue(dialog instanceof PinDialog);
         assertTrue(dialog.isShowing());
         return (PinDialog) dialog;
+    }
+
+    private boolean latestDialogIsShowing() {
+        Dialog dialog = ShadowDialog.getLatestDialog();
+        return dialog != null && dialog.isShowing();
+    }
+
+    private void virtualDigits(Window window, String digits) {
+        for (char digit : digits.toCharArray()) {
+            virtualKey(window, "key_" + digit);
+        }
+    }
+
+    private void virtualConfirm(Window window) {
+        virtualKey(window, "key_confirm");
+    }
+
+    private void virtualKey(Window window, String tag) {
+        focusVirtualKey(window, tag);
+        press(window, KeyEvent.KEYCODE_DPAD_CENTER);
+    }
+
+    private void focusVirtualKey(Window window, String tag) {
+        View root = window.getDecorView();
+        View target = root.findViewWithTag(tag);
+        View focused = root.findFocus();
+        assertNotNull(focused);
+        int from = keypadIndex(focused.getTag().toString());
+        int to = keypadIndex(tag);
+        for (int row = from / 3; row != to / 3; row += row < to / 3 ? 1 : -1) {
+            press(window, row < to / 3 ? KeyEvent.KEYCODE_DPAD_DOWN : KeyEvent.KEYCODE_DPAD_UP);
+        }
+        for (int col = from % 3; col != to % 3; col += col < to % 3 ? 1 : -1) {
+            press(window, col < to % 3 ? KeyEvent.KEYCODE_DPAD_RIGHT : KeyEvent.KEYCODE_DPAD_LEFT);
+        }
+        assertSame(target, root.findFocus());
+    }
+
+    private int keypadIndex(String tag) {
+        if (tag.equals("key_delete")) return 9;
+        if (tag.equals("key_confirm")) return 11;
+        int digit = Integer.parseInt(tag.substring(4));
+        return digit == 0 ? 10 : digit - 1;
     }
 
     private void press(Window window, int code) {

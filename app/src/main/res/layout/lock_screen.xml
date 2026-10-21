@@ -1,55 +1,121 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/lock_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/canvas"
-    android:gravity="center"
-    android:orientation="vertical"
-    android:paddingStart="64dp"
-    android:paddingEnd="64dp">
+    android:paddingLeft="24dp"
+    android:paddingTop="16dp"
+    android:paddingRight="24dp"
+    android:paddingBottom="16dp">
 
-    <TextView
-        android:id="@+id/lock_brand"
-        style="@style/Text.Caption"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:background="@drawable/pill_bg"
-        android:paddingStart="14dp"
-        android:paddingTop="6dp"
-        android:paddingEnd="14dp"
-        android:paddingBottom="6dp"
-        android:text="家长管控"
-        android:textColor="@color/accent_light" />
+    <ScrollView
+        android:id="@+id/entry_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true"
+        android:focusable="false">
 
-    <TextView
-        android:id="@+id/lock_title"
-        style="@style/Text.Display"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="22dp"
-        android:gravity="center"
-        android:text="今日电视时长已用完"
-        android:textSize="38sp" />
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
 
-    <TextView
-        android:id="@+id/lock_prompt"
-        style="@style/Text.Body"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="18dp"
-        android:gravity="center"
-        android:text="用遥控器输入 6 位家长密码解除限时"
-        android:textSize="20sp" />
+            <LinearLayout
+                android:id="@+id/entry_columns"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:baselineAligned="false"
+                android:gravity="center_vertical"
+                android:orientation="vertical">
 
-    <TextView
-        android:id="@+id/lock_input"
-        style="@style/Text.Accent"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="22dp"
-        android:gravity="center"
-        android:minHeight="56dp"
-        android:textColor="@color/accent_light"
-        android:textSize="40sp" />
-</LinearLayout>
+                <LinearLayout
+                    android:id="@+id/entry_copy"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_horizontal"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/lock_brand"
+                        style="@style/Text.Caption"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/pill_bg"
+                        android:paddingLeft="14dp"
+                        android:paddingTop="6dp"
+                        android:paddingRight="14dp"
+                        android:paddingBottom="6dp"
+                        android:text="家长管控"
+                        android:textColor="@color/accent_light" />
+
+                    <TextView
+                        android:id="@+id/lock_title"
+                        style="@style/Text.Display"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:gravity="center"
+                        android:text="今日电视时长已用完"
+                        android:textSize="30sp" />
+
+                    <TextView
+                        android:id="@+id/lock_prompt"
+                        style="@style/Text.Body"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:gravity="center"
+                        android:text="输入 6 位家长密码解除限时"
+                        android:textSize="18sp" />
+
+                    <TextView
+                        android:id="@+id/lock_input"
+                        style="@style/Text.Accent"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:gravity="center"
+                        android:minHeight="48dp"
+                        android:textColor="@color/accent_light"
+                        android:textSize="32sp" />
+
+                    <Button
+                        android:id="@+id/parent_manage"
+                        style="@style/Widget.PillButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="48dp"
+                        android:layout_gravity="center_horizontal"
+                        android:layout_marginTop="12dp"
+                        android:focusable="true"
+                        android:focusableInTouchMode="true"
+                        android:tag="parent_manage"
+                        android:text="家长管理" />
+
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/keypad_column"
+                    android:layout_width="252dp"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_horizontal"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/Text.Caption"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="12dp"
+                        android:gravity="center"
+                        android:text="方向下 / 右进入数字盘\n输入密码可使今天不限时"
+                        android:textColor="@color/on_dark_mute" />
+
+                    <FrameLayout
+                        android:id="@+id/keypad_host"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+            </LinearLayout>
+        </FrameLayout>
+    </ScrollView>
+</FrameLayout>

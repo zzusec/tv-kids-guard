@@ -6,8 +6,11 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.WindowManager;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 /** Full-screen parent gate; a dialog over playing video is not an adequate lock. */
@@ -23,6 +26,7 @@ public class AdminAuthActivity extends Activity {
     private TextView title;
     private TextView prompt;
     private TextView masked;
+    private RemoteKeypad.NumericPad keypad;
     private int stage;
     private String firstPin;
     private String error = "";
@@ -75,8 +79,37 @@ public class AdminAuthActivity extends Activity {
         title = findViewById(R.id.lock_title);
         prompt = findViewById(R.id.lock_prompt);
         masked = findViewById(R.id.lock_input);
+        configureInputLayout();
+        keypad = new RemoteKeypad.NumericPad(this, new RemoteKeypad.NumericListener() {
+            @Override public void onDigit(int digit) { appendDigit(digit); render(); }
+            @Override public void onDelete() { deleteDigit(); render(); }
+            @Override public void onConfirm() { submit(); render(); }
+        });
+        ((FrameLayout) findViewById(R.id.keypad_host)).addView(keypad);
+        keypad.focusFirstKey();
         render();
         GuardService.start(this);
+    }
+
+    private void configureInputLayout() {
+        int widthDp = getResources().getConfiguration().screenWidthDp;
+        float density = getResources().getDisplayMetrics().density;
+        boolean wide = widthDp >= 600;
+        LinearLayout columns = findViewById(R.id.entry_columns);
+        columns.setOrientation(wide ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        FrameLayout.LayoutParams content = (FrameLayout.LayoutParams) columns.getLayoutParams();
+        content.width = Math.round(Math.min(900, widthDp - 48) * density);
+        content.gravity = Gravity.CENTER;
+        columns.setLayoutParams(content);
+        findViewById(R.id.entry_copy).setLayoutParams(new LinearLayout.LayoutParams(
+                wide ? 0 : LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT, wide ? 1f : 0f));
+        LinearLayout.LayoutParams pad = new LinearLayout.LayoutParams(Math.round(252 * density),
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        pad.gravity = Gravity.CENTER_HORIZONTAL;
+        pad.leftMargin = wide ? Math.round(24 * density) : 0;
+        pad.topMargin = wide ? 0 : Math.round(18 * density);
+        findViewById(R.id.keypad_column).setLayoutParams(pad);
     }
 
     @Override
@@ -144,8 +177,13 @@ public class AdminAuthActivity extends Activity {
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         int code = event.getKeyCode();
-        if (PinDialog.isVolumeKey(code) || code == KeyEvent.KEYCODE_POWER) {
+        if (PinDialog.isVolumeKey(code) || code == KeyEvent.KEYCODE_POWER
+                || code == KeyEvent.KEYCODE_TV_POWER) {
             return super.dispatchKeyEvent(event);
+        }
+        if (keypad.handleKeyEvent(event)) {
+            render();
+            return true;
         }
         if (event.getAction() != KeyEvent.ACTION_DOWN || event.getRepeatCount() > 0) {
             return true;
@@ -154,11 +192,11 @@ public class AdminAuthActivity extends Activity {
         if (code == KeyEvent.KEYCODE_BACK) {
             onBackPressed();
         } else if (digit >= 0) {
+            keypad.usePhysicalInput();
             appendDigit(digit);
         } else if (code == KeyEvent.KEYCODE_DEL || code == KeyEvent.KEYCODE_DPAD_LEFT) {
             deleteDigit();
         } else if (RemoteKeypad.isSelectKey(code)) {
-            // The remote's own number keys are the only input; OK submits a complete PIN.
             submit();
         }
         render();
@@ -271,5 +309,6 @@ public class AdminAuthActivity extends Activity {
             dots.append('●');
         }
         masked.setText(dots);
+        keypad.setEnabled(wait == 0L && !openingConsole);
     }
 }

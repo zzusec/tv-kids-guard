@@ -57,8 +57,8 @@ public class LockRepeatedDigitTest {
 
     @Test
     public void partialBufferIsNotSubmittedByOk() {
-        service.onDigit(7);
-        service.onDigit(7);
+        press(KeyEvent.KEYCODE_7);
+        press(KeyEvent.KEYCODE_7);
         press(KeyEvent.KEYCODE_DPAD_CENTER);
         assertEquals("77", service.lockInput());
         assertTrue(service.isLocked());

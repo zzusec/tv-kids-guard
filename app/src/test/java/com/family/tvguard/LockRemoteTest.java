@@ -124,8 +124,9 @@ public class LockRemoteTest {
 
     @Test
     public void emptyOkOpensTheParentGateWithoutUnlockingQuota() {
-        // No on-screen controls: an empty buffer plus OK is the documented parent entry.
-        assertNull(activity.getWindow().getDecorView().findViewWithTag("parent_manage"));
+        View parent = activity.getWindow().getDecorView().findViewWithTag("parent_manage");
+        assertNotNull(parent);
+        assertTrue(parent.hasFocus());
         press(KeyEvent.KEYCODE_DPAD_CENTER);
 
         assertNotNull(shadowOf(activity).getNextStartedActivity());
