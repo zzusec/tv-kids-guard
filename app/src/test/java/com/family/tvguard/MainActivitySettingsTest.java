@@ -195,7 +195,7 @@ public class MainActivitySettingsTest {
         enterDigits(activity, "22");
         PinDialog dialog = latestPinDialog();
         assertTrue(hasText(dialog.getWindow().getDecorView(), "临时加时长"));
-        assertTrue(hasText(dialog.getWindow().getDecorView(), "仅对今天有效。输入 1-60 分钟，选择「确认」保存"));
+        assertTrue(hasText(dialog.getWindow().getDecorView(), "仅对今天有效。输入 1-60 分钟"));
         assertEquals(Prefs.DEFAULT_LIMIT_MINUTES, prefs.getDailyLimitMinutes());
         assertEquals(0L, prefs.getBonusSeconds());
     }

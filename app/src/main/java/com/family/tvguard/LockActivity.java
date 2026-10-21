@@ -27,6 +27,7 @@ public class LockActivity extends Activity {
     private TextView titleView;
     private Button parentButton;
     private RemoteKeypad.NumericPad keypad;
+    private RemoteInputMode inputMode;
     private Prefs prefs;
     private boolean rejected;
     private boolean physicalInput;
@@ -103,7 +104,6 @@ public class LockActivity extends Activity {
         titleView = findViewById(R.id.lock_title);
         promptView = findViewById(R.id.lock_prompt);
         inputView = findViewById(R.id.lock_input);
-        configureInputLayout();
         parentButton = findViewById(R.id.parent_manage);
         parentButton.setOnClickListener(view -> openParentGate(this));
         keypad = new RemoteKeypad.NumericPad(this, new RemoteKeypad.NumericListener() {
@@ -111,8 +111,16 @@ public class LockActivity extends Activity {
             @Override public void onDelete() { deleteDigit(); refreshUi(); }
             @Override public void onConfirm() { submitPin(); refreshUi(); }
         });
-        keypad.setUpperFocusTarget(parentButton);
         ((FrameLayout) findViewById(R.id.keypad_host)).addView(keypad);
+        inputMode = new RemoteInputMode(this, parentButton, keypad, this::configureInputLayout);
+        keypad.setUpperFocusTarget(parentButton);
+        LinearLayout.LayoutParams toggle = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, Math.round(48 * getResources()
+                .getDisplayMetrics().density));
+        toggle.topMargin = Math.round(12 * getResources().getDisplayMetrics().density);
+        toggle.gravity = Gravity.CENTER_HORIZONTAL;
+        ((LinearLayout) findViewById(R.id.entry_copy)).addView(inputMode.toggle(), toggle);
+        configureInputLayout();
         parentButton.requestFocus();
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN
                 | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
@@ -122,11 +130,12 @@ public class LockActivity extends Activity {
     private void configureInputLayout() {
         int widthDp = getResources().getConfiguration().screenWidthDp;
         float density = getResources().getDisplayMetrics().density;
-        boolean wide = widthDp >= 600;
+        boolean showPad = inputMode.usesOnScreen();
+        boolean wide = showPad && widthDp >= 600;
         LinearLayout columns = findViewById(R.id.entry_columns);
         columns.setOrientation(wide ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
         FrameLayout.LayoutParams content = (FrameLayout.LayoutParams) columns.getLayoutParams();
-        content.width = Math.round(Math.min(900, widthDp - 48) * density);
+        content.width = Math.round(Math.min(showPad ? 900 : 560, widthDp - 48) * density);
         content.gravity = Gravity.CENTER;
         columns.setLayoutParams(content);
         findViewById(R.id.entry_copy).setLayoutParams(new LinearLayout.LayoutParams(
@@ -138,18 +147,22 @@ public class LockActivity extends Activity {
         pad.leftMargin = wide ? Math.round(24 * density) : 0;
         pad.topMargin = wide ? 0 : Math.round(18 * density);
         findViewById(R.id.keypad_column).setLayoutParams(pad);
+        findViewById(R.id.keypad_column).setVisibility(showPad ? View.VISIBLE : View.GONE);
     }
 
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        inputMode.refresh();
+        parentButton.requestFocus();
         refreshUi();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        inputMode.refresh();
         instance = this;
         if (!isLockActive() || AdminSession.isMaintenanceActive()) {
             finishAuthorized();
@@ -288,13 +301,19 @@ public class LockActivity extends Activity {
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
                 cancelParentSelect();
                 physicalInput = true;
+                inputMode.onPhysicalDigit();
                 keypad.usePhysicalInput();
                 enterDigit(digit);
             }
             return true;
         }
         if (!RemoteKeypad.isSelectKey(code)) cancelParentSelect();
+        if (inputMode.handleKeyEvent(event)) return true;
         if (parentButton.hasFocus()) {
+            if (code == KeyEvent.KEYCODE_DPAD_LEFT && !physicalInput) {
+                if (event.getAction() == KeyEvent.ACTION_DOWN) inputMode.toggle().requestFocus();
+                return true;
+            }
             if (code == KeyEvent.KEYCODE_DPAD_DOWN || code == KeyEvent.KEYCODE_DPAD_RIGHT) {
                 if (event.getAction() == KeyEvent.ACTION_DOWN && keypad.isEnabled()) {
                     physicalInput = false;

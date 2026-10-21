@@ -205,7 +205,13 @@ final class ScreenRemote {
     static void focus(Activity activity, String suffix) {
         View focused = activity.getWindow().getDecorView().findFocus();
         assertNotNull("Remote entry requires an initial focus", focused);
-        if ("parent_manage".equals(focused.getTag())) {
+        if (!activity.getWindow().getDecorView().findViewWithTag("key_1").isShown()) {
+            if (!"keypad_toggle".equals(focused.getTag())) press(activity, KeyEvent.KEYCODE_DPAD_DOWN);
+            assertEquals("keypad_toggle", activity.getWindow().getDecorView().findFocus().getTag());
+            press(activity, KeyEvent.KEYCODE_DPAD_CENTER);
+            focused = activity.getWindow().getDecorView().findFocus();
+        }
+        if ("parent_manage".equals(focused.getTag()) || "keypad_toggle".equals(focused.getTag())) {
             press(activity, KeyEvent.KEYCODE_DPAD_DOWN);
             focused = activity.getWindow().getDecorView().findFocus();
         }

@@ -20,6 +20,7 @@ import org.robolectric.annotation.Config;
 import org.robolectric.annotation.GraphicsMode;
 import org.robolectric.annotation.LooperMode;
 import org.robolectric.shadows.ShadowLooper;
+import org.robolectric.util.ReflectionHelpers;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -43,6 +44,7 @@ public class NumericEntryVisualTest {
     public void setUp() {
         context = RuntimeEnvironment.getApplication();
         context.getSharedPreferences("tvguard_prefs", Context.MODE_PRIVATE).edit().clear().commit();
+        context.getSharedPreferences("tvguard_remote", Context.MODE_PRIVATE).edit().clear().commit();
         new Prefs(context).setPassword("135790");
         AdminSession.revoke();
     }
@@ -66,13 +68,26 @@ public class NumericEntryVisualTest {
         captureSurfaces("640x360");
     }
 
+    @Test
+    public void physicalRemoteSurfacesHideTheGridAndRemainCompact() throws Exception {
+        context.getSharedPreferences("tvguard_remote", 0).edit().putBoolean("show_keypad", false).commit();
+        captureSurfaces("physical-960x540");
+    }
+
+    @Test
+    @Config(qualifiers = "w640dp-h360dp-land-mdpi")
+    public void physicalRemoteSurfacesFitAShortTvViewport() throws Exception {
+        context.getSharedPreferences("tvguard_remote", 0).edit().putBoolean("show_keypad", false).commit();
+        captureSurfaces("physical-640x360");
+    }
+
     private void captureSurfaces(String size) throws Exception {
         controller = Robolectric.buildActivity(AdminAuthActivity.class).setup().visible()
                 .windowFocusChanged(true);
         ShadowLooper.idleMainLooper();
         View gate = controller.get().getWindow().getDecorView();
         capture(gate, "keypad-gate-" + size);
-        assertPadVisible(gate);
+        assertInputControls(gate);
         assertFullyVisible(gate.findViewById(R.id.lock_input));
         controller.pause().stop().destroy();
         controller = null;
@@ -85,7 +100,7 @@ public class NumericEntryVisualTest {
                 .windowFocusChanged(true);
         ShadowLooper.idleMainLooper();
         View lock = controller.get().getWindow().getDecorView();
-        assertPadVisible(lock);
+        assertInputControls(lock);
         assertFullyVisible(lock.findViewById(R.id.lock_input));
         capture(lock, "keypad-lock-" + size);
         controller.pause().stop().destroy();
@@ -95,15 +110,25 @@ public class NumericEntryVisualTest {
 
         for (boolean password : new boolean[] {false, true}) {
             dialog = new PinDialog(context, password ? "再次验证家长密码" : "每日时长",
-                    password ? "输入当前 6 位家长密码" : "当前 30 分钟\n输入 1-1440 分钟，选择「确认」保存",
+                    password ? "输入当前 6 位家长密码" : "当前 30 分钟\n输入 1-1440 分钟",
                     password ? 6 : 4, password, value -> {});
             dialog.show();
             ShadowLooper.idleMainLooper();
             View surface = dialog.getWindow().getDecorView();
-            assertPadVisible(surface);
+            assertInputControls(surface);
+            assertFullyVisible(ReflectionHelpers.getField(dialog, "inputView"));
             capture(surface, "keypad-" + (password ? "pin" : "duration") + "-" + size);
             dialog.dismiss();
             dialog = null;
+        }
+    }
+
+    private void assertInputControls(View root) {
+        assertFullyVisible(root.findViewWithTag("keypad_toggle"));
+        if (context.getSharedPreferences("tvguard_remote", 0).getBoolean("show_keypad", true)) {
+            assertPadVisible(root);
+        } else {
+            assertEquals(View.GONE, root.findViewWithTag("numeric_keypad").getVisibility());
         }
     }
 

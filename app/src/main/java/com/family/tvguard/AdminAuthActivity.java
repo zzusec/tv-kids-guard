@@ -27,6 +27,7 @@ public class AdminAuthActivity extends Activity {
     private TextView prompt;
     private TextView masked;
     private RemoteKeypad.NumericPad keypad;
+    private RemoteInputMode inputMode;
     private int stage;
     private String firstPin;
     private String error = "";
@@ -79,14 +80,20 @@ public class AdminAuthActivity extends Activity {
         title = findViewById(R.id.lock_title);
         prompt = findViewById(R.id.lock_prompt);
         masked = findViewById(R.id.lock_input);
-        configureInputLayout();
         keypad = new RemoteKeypad.NumericPad(this, new RemoteKeypad.NumericListener() {
             @Override public void onDigit(int digit) { appendDigit(digit); render(); }
             @Override public void onDelete() { deleteDigit(); render(); }
             @Override public void onConfirm() { submit(); render(); }
         });
         ((FrameLayout) findViewById(R.id.keypad_host)).addView(keypad);
-        keypad.focusFirstKey();
+        inputMode = new RemoteInputMode(this, masked, keypad, this::configureInputLayout);
+        LinearLayout.LayoutParams toggle = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, Math.round(48 * getResources()
+                .getDisplayMetrics().density));
+        toggle.topMargin = Math.round(12 * getResources().getDisplayMetrics().density);
+        ((LinearLayout) findViewById(R.id.entry_copy)).addView(inputMode.toggle(), toggle);
+        configureInputLayout();
+        inputMode.focusEntry();
         render();
         GuardService.start(this);
     }
@@ -94,11 +101,12 @@ public class AdminAuthActivity extends Activity {
     private void configureInputLayout() {
         int widthDp = getResources().getConfiguration().screenWidthDp;
         float density = getResources().getDisplayMetrics().density;
-        boolean wide = widthDp >= 600;
+        boolean showPad = inputMode.usesOnScreen();
+        boolean wide = showPad && widthDp >= 600;
         LinearLayout columns = findViewById(R.id.entry_columns);
         columns.setOrientation(wide ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
         FrameLayout.LayoutParams content = (FrameLayout.LayoutParams) columns.getLayoutParams();
-        content.width = Math.round(Math.min(900, widthDp - 48) * density);
+        content.width = Math.round(Math.min(showPad ? 900 : 560, widthDp - 48) * density);
         content.gravity = Gravity.CENTER;
         columns.setLayoutParams(content);
         findViewById(R.id.entry_copy).setLayoutParams(new LinearLayout.LayoutParams(
@@ -110,11 +118,14 @@ public class AdminAuthActivity extends Activity {
         pad.leftMargin = wide ? Math.round(24 * density) : 0;
         pad.topMargin = wide ? 0 : Math.round(18 * density);
         findViewById(R.id.keypad_column).setLayoutParams(pad);
+        findViewById(R.id.keypad_column).setVisibility(showPad ? android.view.View.VISIBLE
+                : android.view.View.GONE);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        inputMode.refresh();
         visible = true;
         if (AdminSession.isActive() && !prefs.needsPasswordSetup()) {
             openConsole();
@@ -181,7 +192,7 @@ public class AdminAuthActivity extends Activity {
                 || code == KeyEvent.KEYCODE_TV_POWER) {
             return super.dispatchKeyEvent(event);
         }
-        if (keypad.handleKeyEvent(event)) {
+        if (inputMode.handleKeyEvent(event) || keypad.handleKeyEvent(event)) {
             render();
             return true;
         }
@@ -192,6 +203,7 @@ public class AdminAuthActivity extends Activity {
         if (code == KeyEvent.KEYCODE_BACK) {
             onBackPressed();
         } else if (digit >= 0) {
+            inputMode.onPhysicalDigit();
             keypad.usePhysicalInput();
             appendDigit(digit);
         } else if (code == KeyEvent.KEYCODE_DEL || code == KeyEvent.KEYCODE_DPAD_LEFT) {
@@ -310,5 +322,10 @@ public class AdminAuthActivity extends Activity {
         }
         masked.setText(dots);
         keypad.setEnabled(wait == 0L && !openingConsole);
+        android.view.View focused = getWindow().getDecorView().findFocus();
+        if (wait == 0L && !openingConsole && inputMode.usesOnScreen()
+                && !(focused instanceof android.widget.Button)) {
+            keypad.focusFirstKey();
+        }
     }
 }

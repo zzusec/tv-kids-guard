@@ -31,6 +31,10 @@ final class PinDialog extends Dialog {
     private final StringBuilder input = new StringBuilder();
     private TextView inputView;
     private RemoteKeypad.NumericPad keypad;
+    private RemoteInputMode inputMode;
+    private LinearLayout box;
+    private LinearLayout copy;
+    private TextView help;
     private boolean wide;
     private boolean submitted;
 
@@ -60,14 +64,15 @@ final class PinDialog extends Dialog {
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
         float density = getContext().getResources().getDisplayMetrics().density;
         getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        int pad = Math.round(density * 28);
+        boolean compact = getContext().getResources().getConfiguration().screenHeightDp <= 400;
+        int pad = Math.round(density * (compact ? 20 : 28));
         wide = getContext().getResources().getConfiguration().screenWidthDp >= 600;
-        LinearLayout box = new LinearLayout(getContext());
+        box = new LinearLayout(getContext());
         box.setOrientation(wide ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
         box.setGravity(Gravity.CENTER_VERTICAL);
         box.setBackgroundResource(R.drawable.parent_card_bg);
         box.setPadding(pad, pad, pad, pad);
-        LinearLayout copy = new LinearLayout(getContext());
+        copy = new LinearLayout(getContext());
         copy.setOrientation(LinearLayout.VERTICAL);
         box.addView(copy, new LinearLayout.LayoutParams(wide ? 0 : LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT, wide ? 1f : 0f));
@@ -75,14 +80,14 @@ final class PinDialog extends Dialog {
         TextView titleView = new TextView(getContext());
         titleView.setText(title);
         titleView.setTextColor(getContext().getResources().getColor(R.color.panel_ink));
-        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 26);
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, compact ? 22 : 26);
         titleView.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         copy.addView(titleView);
 
         TextView messageView = new TextView(getContext());
         messageView.setText(message);
         messageView.setTextColor(getContext().getResources().getColor(R.color.panel_muted));
-        messageView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        messageView.setTextSize(TypedValue.COMPLEX_UNIT_SP, compact ? 16 : 18);
         messageView.setPadding(0, Math.round(density * 12), 0, 0);
         copy.addView(messageView);
 
@@ -94,11 +99,11 @@ final class PinDialog extends Dialog {
             inputView.setLetterSpacing(0.3f);
         }
         inputView.setGravity(Gravity.CENTER);
-        inputView.setMinHeight(Math.round(density * 72));
+        inputView.setMinHeight(Math.round(density * (compact ? 56 : 72)));
         inputView.setBackgroundResource(R.drawable.parent_input_bg);
         LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        inputParams.topMargin = Math.round(density * 22);
+        inputParams.topMargin = Math.round(density * (compact ? 16 : 22));
         copy.addView(inputView, inputParams);
 
         keypad = new RemoteKeypad.NumericPad(getContext(), new RemoteKeypad.NumericListener() {
@@ -113,12 +118,17 @@ final class PinDialog extends Dialog {
         else keypadParams.topMargin = Math.round(density * 18);
         box.addView(keypad, keypadParams);
 
-        TextView help = new TextView(getContext());
-        help.setText("方向键选数字 · OK 输入 · 返回取消\n也可用遥控器数字键直接输入");
+        help = new TextView(getContext());
         help.setTextColor(getContext().getResources().getColor(R.color.panel_muted));
-        help.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        help.setPadding(0, Math.round(density * 18), 0, 0);
+        help.setTextSize(TypedValue.COMPLEX_UNIT_SP, compact ? 12 : 14);
+        help.setPadding(0, Math.round(density * (compact ? 10 : 18)), 0, 0);
         copy.addView(help);
+        inputMode = new RemoteInputMode(getContext(), inputView, keypad, this::configureInputLayout);
+        LinearLayout.LayoutParams toggle = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, Math.round(48 * density));
+        toggle.topMargin = Math.round(8 * density);
+        copy.addView(inputMode.toggle(), toggle);
+        configureInputLayout();
         ScrollView scroll = new ScrollView(getContext());
         scroll.setFillViewport(true);
         scroll.addView(box);
@@ -130,11 +140,29 @@ final class PinDialog extends Dialog {
     @Override
     protected void onStart() {
         super.onStart();
+        inputMode.refresh();
+        configureInputLayout();
+        inputMode.focusEntry();
+    }
+
+    private void configureInputLayout() {
         float density = getContext().getResources().getDisplayMetrics().density;
+        boolean showPad = inputMode.usesOnScreen();
+        wide = showPad && getContext().getResources().getConfiguration().screenWidthDp >= 600;
+        box.setOrientation(wide ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        copy.setLayoutParams(new LinearLayout.LayoutParams(wide ? 0
+                : LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+                wide ? 1f : 0f));
+        LinearLayout.LayoutParams pad = (LinearLayout.LayoutParams) keypad.getLayoutParams();
+        pad.width = wide ? Math.round(252 * density) : LinearLayout.LayoutParams.MATCH_PARENT;
+        pad.leftMargin = wide ? Math.round(24 * density) : 0;
+        pad.topMargin = wide ? 0 : Math.round(18 * density);
+        keypad.setLayoutParams(pad);
+        help.setText(showPad ? "方向键选数字 · OK 输入 · 返回取消"
+                : "数字键输入 · 左键删除 · OK 确认\n方向下可选择屏幕数字盘 · 返回取消");
         int width = getContext().getResources().getDisplayMetrics().widthPixels;
         getWindow().setLayout(Math.min(Math.round(density * (wide ? 760 : 560)),
                 Math.max(1, width - Math.round(density * 48))), WindowManager.LayoutParams.WRAP_CONTENT);
-        keypad.focusFirstKey();
     }
 
     @Override
@@ -143,12 +171,13 @@ final class PinDialog extends Dialog {
         if (isVolumeKey(code) || code == KeyEvent.KEYCODE_POWER) {
             return super.dispatchKeyEvent(event);
         }
-        if (keypad.handleKeyEvent(event)) return true;
+        if (inputMode.handleKeyEvent(event) || keypad.handleKeyEvent(event)) return true;
         if (event.getAction() != KeyEvent.ACTION_DOWN || event.getRepeatCount() > 0) {
             return true;
         }
         int digit = digitOf(code);
         if (digit >= 0) {
+            inputMode.onPhysicalDigit();
             keypad.usePhysicalInput();
             appendDigit(digit);
         } else if (code == KeyEvent.KEYCODE_DEL || code == KeyEvent.KEYCODE_DPAD_LEFT) {

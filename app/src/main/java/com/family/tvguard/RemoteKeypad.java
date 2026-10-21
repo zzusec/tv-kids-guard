@@ -109,7 +109,7 @@ public final class RemoteKeypad {
         void focusFirstKey() {
             virtualInput = true;
             cancelSelect();
-            if (isEnabled()) keys[0].requestFocus();
+            if (isEnabled() && getVisibility() == VISIBLE) keys[0].requestFocus();
         }
 
         void usePhysicalInput() {
@@ -119,6 +119,7 @@ public final class RemoteKeypad {
 
         /** Preserve physical-entry LEFT/delete and OK/submit until a direction selects the pad. */
         boolean handleKeyEvent(KeyEvent event) {
+            if (getVisibility() != VISIBLE) return false;
             int code = event.getKeyCode();
             boolean navigation = isNavigationKey(code);
             if (!navigation && !isSelectKey(code)) return false;
@@ -178,7 +179,7 @@ public final class RemoteKeypad {
             cancelSelect();
             if (keys != null) {
                 for (Button key : keys) if (key != null) key.setEnabled(enabled);
-                if (enabled && upperFocusTarget == null && findFocus() == null) focusFirstKey();
+                if (enabled && getRootView().findFocus() == null) focusFirstKey();
             }
         }
 

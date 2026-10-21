@@ -405,6 +405,17 @@ public class RemoteAuthTest {
 
     private void virtualDigits(Window.Callback target, String value) {
         press(target, KeyEvent.KEYCODE_DPAD_UP);
+        Window window = target instanceof PinDialog ? ((PinDialog) target).getWindow()
+                : ((AdminAuthActivity) target).getWindow();
+        if (!window.getDecorView().findViewWithTag("key_1").isShown()) {
+            press(target, KeyEvent.KEYCODE_DPAD_DOWN);
+            assertEquals("keypad_toggle", window.getDecorView().findFocus().getTag());
+            press(target, KeyEvent.KEYCODE_DPAD_CENTER);
+        }
+        View focused = window.getDecorView().findFocus();
+        if (focused != null && "keypad_toggle".equals(focused.getTag())) {
+            press(target, KeyEvent.KEYCODE_DPAD_DOWN);
+        }
         for (char digit : value.toCharArray()) {
             focusKey(target, String.valueOf(digit));
             press(target, KeyEvent.KEYCODE_DPAD_CENTER);
