@@ -2,6 +2,8 @@ package com.family.tvguard;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.app.admin.DevicePolicyManager;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.ResolveInfo;
 import android.net.Uri;
@@ -14,7 +16,9 @@ import android.text.TextUtils;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.accessibility.AccessibilityEvent;
+import android.view.accessibility.AccessibilityNodeInfo;
 
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -31,6 +35,9 @@ public class AppLockService extends AccessibilityService {
     private static final String TAG = "TvGuard";
     private static final String SYSTEM_UI = "com.android.systemui";
     private static final long SHORTCUT_WINDOW_MILLIS = 2000L;
+    private static final long SETTINGS_RETRY_MILLIS = 1000L;
+    private static final long SETTINGS_REFRESH_MILLIS = 30_000L;
+    private static volatile AppLockService instance;
     /** Settings, package installer and app-info surfaces that can switch the guard off. */
     private static final String[] KNOWN_TV_SETTINGS = {
             "com.android.tv.settings",
@@ -51,12 +58,18 @@ public class AppLockService extends AccessibilityService {
     private long firstZeroElapsed;
     private String foregroundPackage = "";
     private Prefs prefs;
-    private final Set<String> settingsPackages = new HashSet<>();
-    private boolean settingsResolved;
+    private final Set<String> settingsPackages = new HashSet<>(Arrays.asList(KNOWN_TV_SETTINGS));
+    private String lastUnrecognizedPackage = "";
+    private long nextSettingsResolveElapsed;
+    private String windowError = "";
+    private String settingsError = "";
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable foregroundCheck = new Runnable() {
         @Override
         public void run() {
+            if (prefs != null && prefs.isProtectionEnabled()) {
+                refreshForegroundPackage();
+            }
             enforceForeground();
             handler.postDelayed(this, 250L);
         }
@@ -66,6 +79,13 @@ public class AppLockService extends AccessibilityService {
     protected void onServiceConnected() {
         super.onServiceConnected();
         prefs = new Prefs(this);
+        foregroundPackage = "";
+        lastUnrecognizedPackage = "";
+        nextSettingsResolveElapsed = 0L;
+        settingsPackages.clear();
+        settingsPackages.addAll(Arrays.asList(KNOWN_TV_SETTINGS));
+        windowError = "";
+        settingsError = "";
         // canRequestFilterKeyEvents in the XML only declares the capability; the flag itself has
         // to be requested here or the console shortcut never receives key events.
         AccessibilityServiceInfo info = getServiceInfo();
@@ -73,6 +93,7 @@ public class AppLockService extends AccessibilityService {
             info.flags |= AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS;
             setServiceInfo(info);
         }
+        instance = this;
         GuardService.start(this);
         handler.removeCallbacks(foregroundCheck);
         handler.post(foregroundCheck);
@@ -89,6 +110,30 @@ public class AppLockService extends AccessibilityService {
         }
         foregroundPackage = pkg.toString();
         enforceForeground();
+    }
+
+    /** Recover the foreground after reconnecting; never inspect text or traverse child nodes. */
+    @SuppressWarnings("deprecation")
+    private void refreshForegroundPackage() {
+        try {
+            AccessibilityNodeInfo root = getRootInActiveWindow();
+            if (root != null) {
+                try {
+                    CharSequence pkg = root.getPackageName();
+                    if (!TextUtils.isEmpty(pkg)) {
+                        foregroundPackage = pkg.toString();
+                    }
+                } finally {
+                    root.recycle();
+                }
+            }
+            windowError = "";
+        } catch (RuntimeException e) {
+            if (windowError.isEmpty()) {
+                Log.w(TAG, "Could not query the active window package", e);
+            }
+            windowError = "当前窗口识别失败，正在重试";
+        }
     }
 
     /** Maintenance expiration must also close a settings page that never changes windows. */
@@ -116,37 +161,57 @@ public class AppLockService extends AccessibilityService {
      * called something else still gets covered.
      */
     private boolean isSettingsPackage(String pkg) {
-        if (!settingsResolved) {
-            settingsResolved = true;
-            Uri self = Uri.parse("package:" + getPackageName());
-            collectSettingsPackage(new Intent(Settings.ACTION_SETTINGS));
-            collectSettingsPackage(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, self));
-            collectSettingsPackage(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
-            collectSettingsPackage(new Intent(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS));
-            collectSettingsPackage(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS));
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                collectSettingsPackage(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, self));
-            }
-            collectSettingsPackage(new Intent(Intent.ACTION_UNINSTALL_PACKAGE, self));
-            collectSettingsPackage(new Intent(Intent.ACTION_DELETE, self));
-            // Android TV builds often route these screens through their own settings package
-            // without advertising the phone intents above, so cover the known TV surfaces too.
-            for (String known : KNOWN_TV_SETTINGS) {
-                settingsPackages.add(known);
-            }
+        long now = SystemClock.elapsedRealtime();
+        if (settingsPackages.contains(pkg) && (settingsError.isEmpty()
+                || now < nextSettingsResolveElapsed)) {
+            return true;
+        }
+        if (!pkg.equals(lastUnrecognizedPackage) || now >= nextSettingsResolveElapsed) {
+            lastUnrecognizedPackage = pkg;
+            boolean resolved = resolveSettingsPackages();
+            nextSettingsResolveElapsed = now + (resolved
+                    ? SETTINGS_REFRESH_MILLIS : SETTINGS_RETRY_MILLIS);
         }
         return settingsPackages.contains(pkg);
     }
 
-    private void collectSettingsPackage(Intent intent) {
+    private boolean resolveSettingsPackages() {
+        Set<String> packages = new HashSet<>(Arrays.asList(KNOWN_TV_SETTINGS));
+        Uri self = Uri.parse("package:" + getPackageName());
+        boolean resolved = collectSettingsPackage(new Intent(Settings.ACTION_SETTINGS), packages);
+        resolved &= collectSettingsPackage(new Intent(Settings.ACTION_SECURITY_SETTINGS), packages);
+        resolved &= collectSettingsPackage(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, self), packages);
+        resolved &= collectSettingsPackage(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS), packages);
+        resolved &= collectSettingsPackage(new Intent(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS), packages);
+        resolved &= collectSettingsPackage(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS), packages);
+        resolved &= collectSettingsPackage(new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN), packages);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            resolved &= collectSettingsPackage(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, self), packages);
+        }
+        resolved &= collectSettingsPackage(new Intent(Intent.ACTION_UNINSTALL_PACKAGE, self), packages);
+        resolved &= collectSettingsPackage(new Intent(Intent.ACTION_DELETE, self), packages);
+        if (resolved) {
+            settingsPackages.clear();
+            settingsError = "";
+        }
+        settingsPackages.addAll(packages);
+        return resolved;
+    }
+
+    private boolean collectSettingsPackage(Intent intent, Set<String> packages) {
         try {
             for (ResolveInfo info : getPackageManager().queryIntentActivities(intent, 0)) {
                 if (info.activityInfo != null) {
-                    settingsPackages.add(info.activityInfo.packageName);
+                    packages.add(info.activityInfo.packageName);
                 }
             }
-        } catch (Exception e) {
-            Log.w(TAG, "Could not resolve " + intent.getAction(), e);
+            return true;
+        } catch (RuntimeException e) {
+            if (settingsError.isEmpty()) {
+                Log.w(TAG, "Could not resolve " + intent.getAction(), e);
+            }
+            settingsError = "设置页面识别失败，正在重试";
+            return false;
         }
     }
 
@@ -190,25 +255,49 @@ public class AppLockService extends AccessibilityService {
     public boolean onUnbind(Intent intent) {
         handler.removeCallbacks(foregroundCheck);
         firstZeroElapsed = 0L;
+        foregroundPackage = "";
+        if (instance == this) {
+            instance = null;
+        }
         return super.onUnbind(intent);
     }
 
     @Override
     public void onDestroy() {
         handler.removeCallbacksAndMessages(null);
+        if (instance == this) {
+            instance = null;
+        }
         super.onDestroy();
     }
 
-    /** True when the parent has switched this service on in system settings. */
+    static boolean isConnected() {
+        return instance != null;
+    }
+
+    static String lastError() {
+        AppLockService service = instance;
+        if (service == null) {
+            return "";
+        }
+        return service.windowError + (service.windowError.isEmpty() || service.settingsError.isEmpty()
+                ? "" : "\n") + service.settingsError;
+    }
+
+    /** Configuration alone does not prove that the service is connected. */
     static boolean isEnabled(android.content.Context ctx) {
+        if (Settings.Secure.getInt(ctx.getContentResolver(),
+                Settings.Secure.ACCESSIBILITY_ENABLED, 0) != 1) {
+            return false;
+        }
         String enabled = Settings.Secure.getString(ctx.getContentResolver(),
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
         if (TextUtils.isEmpty(enabled)) {
             return false;
         }
-        String component = ctx.getPackageName() + "/" + AppLockService.class.getName();
+        ComponentName component = new ComponentName(ctx, AppLockService.class);
         for (String entry : enabled.split(":")) {
-            if (entry.equalsIgnoreCase(component)) {
+            if (component.equals(ComponentName.unflattenFromString(entry))) {
                 return true;
             }
         }

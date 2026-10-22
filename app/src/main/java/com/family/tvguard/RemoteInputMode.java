@@ -142,8 +142,23 @@ final class RemoteInputMode {
     }
 
     static boolean hasPhysicalDigits() {
-        for (int id : InputDevice.getDeviceIds()) {
-            InputDevice device = InputDevice.getDevice(id);
+        int[] ids;
+        try {
+            ids = InputDevice.getDeviceIds();
+        } catch (RuntimeException e) {
+            // A vendor input service can fail this query. The gate must still open: an exception
+            // here would crash the parent verification screen and leave the uninstall page
+            // reachable without a password, so an unknown answer falls back to the on-screen pad.
+            return false;
+        }
+        if (ids == null) return false;
+        for (int id : ids) {
+            InputDevice device;
+            try {
+                device = InputDevice.getDevice(id);
+            } catch (RuntimeException e) {
+                continue;
+            }
             if (device == null || device.isVirtual()) continue;
             int sources = device.getSources();
             if ((sources & InputDevice.SOURCE_KEYBOARD) != InputDevice.SOURCE_KEYBOARD
@@ -159,8 +174,13 @@ final class RemoteInputMode {
             codes[i] = KeyEvent.KEYCODE_0 + i;
             codes[i + 10] = KeyEvent.KEYCODE_NUMPAD_0 + i;
         }
-        boolean[] presentKeys = device.hasKeys(codes);
-        if (presentKeys.length != codes.length) return false;
+        boolean[] presentKeys;
+        try {
+            presentKeys = device.hasKeys(codes);
+        } catch (RuntimeException e) {
+            return false;
+        }
+        if (presentKeys == null || presentKeys.length != codes.length) return false;
         for (int i = 0; i < 10; i++) if (!presentKeys[i] && !presentKeys[i + 10]) return false;
         return true;
     }

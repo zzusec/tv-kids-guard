@@ -85,6 +85,37 @@ public class MainActivityRemoteTest {
     }
 
     @Test
+    public void launcherCannotOpenThePanelWithoutParentAuthentication() {
+        AdminSession.revoke();
+        prefs.setProtectionEnabled(true);
+        controller = Robolectric.buildActivity(MainActivity.class).create().start().resume().visible();
+        activity = controller.get();
+
+        assertTrue(activity.isFinishing());
+        assertNull(activity.findViewById(R.id.menu_actions));
+        assertFalse(MainActivity.isAuthorizedVisible());
+        Intent gate = shadowOf(activity).getNextStartedActivity();
+        assertNotNull(gate);
+        assertEquals(AdminAuthActivity.class.getName(), gate.getComponent().getClassName());
+        assertFalse(AdminSession.isActive());
+    }
+
+    @Test
+    public void returningToThePanelAfterLeavingRequiresThePasswordAgain() {
+        startPanel(true);
+
+        controller.pause();
+        assertFalse(AdminSession.isActive());
+        controller.resume();
+
+        assertTrue(activity.isFinishing());
+        assertFalse(MainActivity.isAuthorizedVisible());
+        Intent gate = shadowOf(activity).getNextStartedActivity();
+        assertNotNull(gate);
+        assertEquals(AdminAuthActivity.class.getName(), gate.getComponent().getClassName());
+    }
+
+    @Test
     public void parentPanelIconLoadsAtTheSameSizeOnEverySupportedSdk() {
         Drawable icon = context.getResources().getDrawable(R.drawable.parent_tv_icon);
         assertNotNull(icon);

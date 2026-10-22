@@ -4,6 +4,7 @@ import android.app.Application;
 import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Context;
+import android.provider.Settings;
 import android.util.TypedValue;
 import android.view.KeyEvent;
 import android.view.View;
@@ -20,6 +21,7 @@ import org.robolectric.Robolectric;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.android.controller.ActivityController;
+import org.robolectric.android.controller.ServiceController;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.LooperMode;
 import org.robolectric.shadows.ShadowDialog;
@@ -100,6 +102,8 @@ public class MainActivitySettingsTest {
         assertTrue(menu.contains("22"));
         assertTrue(menu.contains("33"));
         assertTrue(menu.contains("44"));
+        assertTrue(menu.contains("55"));
+        assertTrue(menu.contains("防卸载"));
         assertFalse(menu.contains("99"));
         assertRemovedMenuItems(menu);
 
@@ -118,12 +122,13 @@ public class MainActivitySettingsTest {
         assertFalse(menu.contains("22"));
         assertFalse(menu.contains("33"));
         assertFalse(menu.contains("44"));
+        assertFalse(menu.contains("55"));
         assertRemovedMenuItems(menu);
 
         for (String code : new String[] {"22", "33", "44", "55", "66", "77", "88"}) {
             assertShortcutIgnored(code);
         }
-        for (String code : new String[] {"22", "33", "44"}) {
+        for (String code : new String[] {"22", "33", "44", "55"}) {
             assertHiddenButtonIgnored(code);
         }
         assertFalse(prefs.isProtectionEnabled());
@@ -152,8 +157,49 @@ public class MainActivitySettingsTest {
         assertEquals(View.GONE, activity.findViewById(R.id.bonus_summary).getVisibility());
         String warning = ((TextView) activity.findViewById(R.id.warn_text)).getText().toString();
         assertTrue(warning.contains("设置保护未开启"));
-        assertFalse(warning.contains("普通防护"));
+        assertTrue(warning.contains("防卸载未开启"));
         assertFalse(warning.contains("强制停止"));
+    }
+
+    @Test
+    public void enabledAccessibilityPermissionWithoutAConnectionShowsARecoveryWarning() {
+        enableAccessibilityPermission();
+
+        MainActivity activity = startPanel(true);
+
+        String warning = ((TextView) activity.findViewById(R.id.warn_text)).getText().toString();
+        assertTrue(warning.contains("设置保护未连接"));
+        assertFalse(warning.contains("设置保护未开启"));
+    }
+
+    @Test
+    public void settingsProtectionWarningTracksTheActualServiceConnection() {
+        enableAccessibilityPermission();
+        ServiceController<AppLockService> accessibility =
+                Robolectric.buildService(AppLockService.class).create();
+        try {
+            accessibility.get().onServiceConnected();
+            MainActivity activity = startPanel(true);
+            String warning = ((TextView) activity.findViewById(R.id.warn_text)).getText().toString();
+            assertFalse(warning.contains("设置保护未连接"));
+            assertFalse(warning.contains("设置保护未开启"));
+
+            accessibility.get().onUnbind(new android.content.Intent());
+            ShadowLooper.idleMainLooper(1, java.util.concurrent.TimeUnit.SECONDS);
+
+            warning = ((TextView) activity.findViewById(R.id.warn_text)).getText().toString();
+            assertTrue(warning.contains("设置保护未连接"));
+            assertTrue(warning.contains("防卸载未开启"));
+        } finally {
+            accessibility.destroy();
+        }
+    }
+
+    private void enableAccessibilityPermission() {
+        Settings.Secure.putInt(context.getContentResolver(), Settings.Secure.ACCESSIBILITY_ENABLED, 1);
+        Settings.Secure.putString(context.getContentResolver(),
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+                new android.content.ComponentName(context, AppLockService.class).flattenToString());
     }
 
     @Test
@@ -248,7 +294,7 @@ public class MainActivitySettingsTest {
     public void removedShortcutsCannotExecuteEvenWhenProtectionIsEnabled() {
         startPanel(true);
 
-        for (String code : new String[] {"55", "66", "77", "88"}) {
+        for (String code : new String[] {"66", "77", "88"}) {
             assertShortcutIgnored(code);
         }
         assertTrue(prefs.isProtectionEnabled());
@@ -332,11 +378,21 @@ public class MainActivitySettingsTest {
         java.util.List<View> views = new java.util.ArrayList<>();
         for (int i = 0; i < menu.getChildCount(); i++) {
             View child = menu.getChildAt(i);
-            if (child instanceof LinearLayout && child.getTag() == null
-                    && ((LinearLayout) child).getChildCount() == 2) {
+            if (child instanceof LinearLayout && child.getTag() == null) {
+                // Action rows hold one or two cells; a cell is a Button or a stack of mutually
+                // exclusive actions (55 while protection runs, 99 after it is switched off).
                 LinearLayout row = (LinearLayout) child;
-                views.add(row.getChildAt(0));
-                views.add(row.getChildAt(1));
+                for (int j = 0; j < row.getChildCount(); j++) {
+                    View cell = row.getChildAt(j);
+                    if (cell instanceof android.view.ViewGroup) {
+                        android.view.ViewGroup stack = (android.view.ViewGroup) cell;
+                        for (int k = 0; k < stack.getChildCount(); k++) {
+                            views.add(stack.getChildAt(k));
+                        }
+                    } else {
+                        views.add(cell);
+                    }
+                }
             } else {
                 views.add(child);
             }
@@ -358,7 +414,7 @@ public class MainActivitySettingsTest {
     }
 
     private void assertRemovedMenuItems(String menu) {
-        for (String code : new String[] {"55", "66", "77", "88"}) {
+        for (String code : new String[] {"66", "77", "88"}) {
             assertFalse("Removed shortcut must not appear: " + code, menu.contains(code));
             assertNull(controller.get().findViewById(android.R.id.content)
                     .findViewWithTag("action_" + code));

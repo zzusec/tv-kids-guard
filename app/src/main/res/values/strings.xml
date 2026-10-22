@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">电视时长管控</string>
-    <string name="accessibility_description">时间用完后，任何应用被打开时立即拉回锁屏界面。</string>
+    <string name="accessibility_description">到时拉回锁屏，进入设置或卸载页面时要求家长密码。为在服务重连后恢复保护，仅查询当前窗口所属应用包名，不读取或保存界面文字。</string>
 </resources>
 

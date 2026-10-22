@@ -15,6 +15,7 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -34,6 +35,7 @@ public class MainActivity extends Activity {
     private final Map<String, Button> actionButtons = new LinkedHashMap<>();
     private volatile boolean visible;
     private boolean updateExternalActivity;
+    private boolean adminExternalActivity;
     private boolean awaitingUpdatePermission;
     private boolean updatePrompted;
     private boolean updateRequested;
@@ -121,34 +123,48 @@ public class MainActivity extends Activity {
         actions.setLayoutParams(menuParams);
     }
 
+    /**
+     * Panel rows. A cell holds one action, except the last one: 55 (protection on) and 99
+     * (protection off) can never be available together, so they share a slot and the panel
+     * keeps the four rows that fit on a 1080p television.
+     */
+    private static final String[][][] ACTION_ROWS = {
+            {{"00", "关闭面板"}, {"11", "改密码"}},
+            {{"12", "修改每日时长"}, {"13", "检查更新"}},
+            {{"22", "临时加时长"}, {"33", "立即锁定"}},
+            {{"44", "关闭防护"}, {"55", "开启防卸载", "99", "启用防护"}},
+    };
+
     private void createActionButtons() {
         LinearLayout menu = findViewById(R.id.menu_actions);
-        String[][] actions = {
-                {"00", "关闭面板"},
-                {"11", "改密码"},
-                {"12", "修改每日时长"},
-                {"13", "检查更新"},
-                {"22", "临时加时长"},
-                {"33", "立即锁定"},
-                {"44", "关闭防护"},
-                {"99", "启用防护"}
-        };
-        // Keep real Buttons and the established grid so DPAD and shortcuts share one action path.
-        for (int index = 0; index < actions.length; index += 2) {
+        int gap = Math.round(10 * getResources().getDisplayMetrics().density);
+        for (int index = 0; index < ACTION_ROWS.length; index++) {
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setBaselineAligned(false);
             row.setLayoutParams(new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            for (int column = 0; column < 2 && index + column < actions.length; column++) {
-                String[] action = actions[index + column];
-                Button button = actionButton(action[0], action[1]);
+            for (int column = 0; column < ACTION_ROWS[index].length; column++) {
+                String[] cell = ACTION_ROWS[index][column];
+                View slot;
+                if (cell.length == 2) {
+                    slot = actionButton(cell[0], cell[1]);
+                } else {
+                    // Two mutually exclusive actions share one cell; only one is ever shown.
+                    FrameLayout stack = new FrameLayout(this);
+                    for (int pair = 0; pair + 1 < cell.length; pair += 2) {
+                        stack.addView(actionButton(cell[pair], cell[pair + 1]),
+                                new FrameLayout.LayoutParams(
+                                        ViewGroup.LayoutParams.MATCH_PARENT,
+                                        ViewGroup.LayoutParams.WRAP_CONTENT));
+                    }
+                    slot = stack;
+                }
                 LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                         0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-                int gap = Math.round(10 * getResources().getDisplayMetrics().density);
                 params.setMarginStart(column == 0 ? 0 : gap);
                 params.topMargin = index == 0 ? 0 : gap;
-                row.addView(button, params);
+                row.addView(slot, params);
             }
             menu.addView(row);
         }
@@ -164,9 +180,13 @@ public class MainActivity extends Activity {
         return button;
     }
 
-    /** Shortcut order in the two-column grid; hidden actions are skipped, never landed on. */
+    /**
+     * Shortcut order in the two-column grid; hidden actions are skipped, never landed on.
+     * 55 and 99 share the last cell and are never visible together, so a row never has more
+     * than two visible cells.
+     */
     private static final String[][] GRID = {
-            {"00", "11"}, {"12", "13"}, {"22", "33"}, {"44", "99"}
+            {"00", "11"}, {"12", "13"}, {"22", "33"}, {"44", "55", "99"}
     };
 
     /**
@@ -252,6 +272,8 @@ public class MainActivity extends Activity {
             case "33":
             case "44":
                 return prefs.isProtectionEnabled();
+            case "55":
+                return prefs.isProtectionEnabled() && !DeviceProtection.isAdminActive(this);
             case "99":
                 return !prefs.isProtectionEnabled();
             default:
@@ -303,6 +325,20 @@ public class MainActivity extends Activity {
             }
             awaitingUpdatePermission = false;
         }
+        if (adminExternalActivity) {
+            adminExternalActivity = false;
+            AdminSession.endMaintenance();
+            GuardService service = GuardService.get();
+            if (service != null) {
+                service.setConsoleVisible(AdminSession.isActive());
+                service.refreshProtection();
+            }
+            if (DeviceProtection.isAdminActive(this)) {
+                DeviceProtection.applyIfOwner(this);
+                toast("设备管理员已启用，请保持设置保护开启");
+            }
+            refreshStatus();
+        }
         if (!requireParent() || statusText == null) {
             return;
         }
@@ -323,7 +359,8 @@ public class MainActivity extends Activity {
         if (service != null) {
             service.setConsoleVisible(false);
         }
-        if (!redirectingToGate && !(updateExternalActivity && AdminSession.isMaintenanceActive())) {
+        if (!redirectingToGate && !((updateExternalActivity || adminExternalActivity)
+                && AdminSession.isMaintenanceActive())) {
             if (UpdateInstaller.hasActiveSession(this)) {
                 UpdateInstaller.cancel(this);
             }
@@ -403,6 +440,7 @@ public class MainActivity extends Activity {
             case "22": addBonus(); break;
             case "33": lockNow(); break;
             case "44": confirmRemoval(); break;
+            case "55": enableUninstallProtection(); break;
             case "99": resumeProtection(); break;
             default: break;
         }
@@ -657,6 +695,41 @@ public class MainActivity extends Activity {
         refreshStatus();
     }
 
+    /** Parent maintenance permits the system confirmation page without disabling protection. */
+    private void enableUninstallProtection() {
+        if (!requireParent()) {
+            return;
+        }
+        if (DeviceProtection.isAdminActive(this)) {
+            toast("防卸载已开启");
+            refreshStatus();
+            return;
+        }
+        Intent intent = DeviceProtection.activationIntent(this);
+        if (getPackageManager().resolveActivity(intent, 0) == null) {
+            toast("无法找到设备管理确认页，请保持设置保护开启");
+            return;
+        }
+        if (!AdminSession.grantMaintenance()) {
+            requireParent();
+            return;
+        }
+        LockActivity.dismissForMaintenance();
+        adminExternalActivity = true;
+        try {
+            startActivity(intent);
+        } catch (Exception e) {
+            adminExternalActivity = false;
+            AdminSession.endMaintenance();
+            GuardService service = GuardService.get();
+            if (service != null) {
+                service.refreshProtection();
+            }
+            GuardService.reportFailure("无法打开设备管理确认页", e);
+            toast("无法打开设备管理确认页");
+        }
+    }
+
     private void requestNotifications() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
                 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
@@ -725,6 +798,14 @@ public class MainActivity extends Activity {
             }
             if (!AppLockService.isEnabled(this)) {
                 warning.append("设置保护未开启：需启用无障碍服务\n");
+            } else if (!AppLockService.isConnected()) {
+                warning.append("设置保护未连接：请重新开关无障碍服务\n");
+            }
+            if (!AppLockService.lastError().isEmpty()) {
+                warning.append(AppLockService.lastError()).append('\n');
+            }
+            if (!DeviceProtection.isUninstallProtected(this)) {
+                warning.append("防卸载未开启：按 55 开启\n");
             }
         }
         if (!GuardService.lastFailure().isEmpty()) {

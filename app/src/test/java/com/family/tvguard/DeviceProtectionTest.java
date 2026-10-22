@@ -56,6 +56,7 @@ public class DeviceProtectionTest {
     @Config(sdk = 19)
     public void kitKatReportsUnavailablePoliciesWithoutCallingModernApis() {
         policy.setDeviceOwner(admin);
+        policy.setActiveAdmin(admin);
 
         DeviceProtection.applyIfOwner(context);
 
@@ -63,9 +64,43 @@ public class DeviceProtectionTest {
         assertFalse(DeviceProtection.isUserControlBlocked(context));
         assertFalse(DeviceProtection.isLockTaskAllowed(context));
         assertEquals(0, policy.uninstallQueryCount);
-        assertTrue(DeviceProtection.describe(context).contains("Android 4.4 不支持系统级限制"));
+        // The administrator, not the owner policy, is what the KitKat package manager checks.
+        assertTrue(DeviceProtection.describe(context).contains("直接卸载限制：管理员已启用"));
         assertTrue(DeviceProtection.describe(context).contains("Android 4.4 不支持系统 Lock Task"));
         assertEquals("", DeviceProtection.lastError());
+    }
+
+    @Test
+    @Config(sdk = 19)
+    public void kitKatWithAnActiveAdministratorReportsDirectRemovalProtection() {
+        policy.setDeviceOwner(admin);
+        policy.setActiveAdmin(admin);
+
+        assertTrue(DeviceProtection.isAdminActive(context));
+        assertTrue(DeviceProtection.isUninstallProtected(context));
+    }
+
+    @Test
+    public void activeAdministratorReportsDirectRemovalProtectionWithoutOwnerPolicies() {
+        policy.setActiveAdmin(admin);
+
+        assertTrue(DeviceProtection.isUninstallProtected(context));
+        assertFalse(DeviceProtection.isUninstallBlocked(context));
+        String report = DeviceProtection.describe(context);
+        assertTrue(report.contains("设备管理：普通管理员"));
+        assertTrue(report.contains("直接卸载限制：管理员已启用"));
+        assertTrue(report.contains("禁止强停：未开启"));
+    }
+
+    @Test
+    public void activationIntentTargetsTheGuardReceiverWithoutActivatingIt() {
+        android.content.Intent intent = DeviceProtection.activationIntent(context);
+
+        assertEquals(android.app.admin.DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN,
+                intent.getAction());
+        assertEquals(admin, intent.getParcelableExtra(
+                android.app.admin.DevicePolicyManager.EXTRA_DEVICE_ADMIN));
+        assertFalse(DeviceProtection.isAdminActive(context));
     }
 
     @Test
@@ -287,7 +322,7 @@ public class DeviceProtectionTest {
                 .setLockTaskModeState(ActivityManager.LOCK_TASK_MODE_PINNED);
         assertTrue(DeviceProtection.describe(context).contains("屏幕固定（可以退出）"));
         assertFalse(DeviceProtection.describe(context).contains("当前锁定模式：系统 Lock Task"));
-        assertFalse(DeviceProtection.describe(context).contains("禁止卸载/强停："));
+        assertTrue(DeviceProtection.describe(context).contains("禁止卸载/强停：未开启"));
     }
 
     private void authorizeRemoval() {

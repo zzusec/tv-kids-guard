@@ -4,10 +4,7 @@ import android.app.admin.DeviceAdminReceiver;
 import android.content.Context;
 import android.content.Intent;
 
-/**
- * Marks the app as a device administrator. Combined with device-owner provisioning this is what
- * lets the lock screen use Lock Task mode, where the system itself blocks HOME, BACK and recents.
- */
+/** Device-management callbacks; deactivation notifications cannot veto system removal. */
 public class GuardDeviceAdmin extends DeviceAdminReceiver {
 
     @Override
@@ -16,5 +13,19 @@ public class GuardDeviceAdmin extends DeviceAdminReceiver {
             DeviceProtection.applyIfOwner(context);
             GuardService.start(context);
         }
+    }
+
+    @Override
+    public void onDisabled(Context context, Intent intent) {
+        Prefs prefs = new Prefs(context);
+        if (!prefs.isProtectionEnabled() || AdminSession.isRemovalInProgress()) {
+            return;
+        }
+        AdminSession.revoke();
+        GuardService service = GuardService.get();
+        if (service != null) {
+            service.refreshProtection();
+        }
+        AdminAuthActivity.launch(context);
     }
 }

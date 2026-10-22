@@ -144,7 +144,7 @@ public class MainActivityUpdateTest {
             }
         }
         assertEquals(1, updateEntries);
-        for (String code : new String[]{"55", "66", "77", "88"}) {
+        for (String code : new String[]{"66", "77", "88"}) {
             assertTrue(menu.findViewWithTag("action_" + code) == null);
         }
         assertNotNull(activity.findViewById(R.id.update_text));

@@ -6,6 +6,7 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Rect;
+import android.provider.Settings;
 import android.text.Spanned;
 import android.text.TextPaint;
 import android.text.style.TextAppearanceSpan;
@@ -137,6 +138,27 @@ public class ParentPanelVisualTest {
             assertEquals("Summary, permission notices and version must fit together on TV", view.getHeight(), visible.height());
         }
         capture(activity.getWindow().getDecorView(), "tv-unlimited");
+    }
+
+    @Test
+    public void disconnectedSettingsProtectionWarningAndVersionFitOnTheTvPanel() throws Exception {
+        Settings.Secure.putInt(context.getContentResolver(), Settings.Secure.ACCESSIBILITY_ENABLED, 1);
+        Settings.Secure.putString(context.getContentResolver(),
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+                new android.content.ComponentName(context, AppLockService.class).flattenToString());
+        prefs.setUnlockedToday(true);
+        prefs.setBonusSeconds(600L);
+        start(true);
+
+        assertTrue(((TextView) activity.findViewById(R.id.warn_text)).getText().toString()
+                .contains("设置保护未连接"));
+        for (int id : new int[] {R.id.warn_text, R.id.version_text}) {
+            View view = activity.findViewById(id);
+            Rect visible = new Rect();
+            assertTrue(view.getGlobalVisibleRect(visible));
+            assertEquals("Recovery warning and version must fit on TV", view.getHeight(), visible.height());
+        }
+        capture(activity.getWindow().getDecorView(), "tv-settings-recovery");
     }
 
     @Test

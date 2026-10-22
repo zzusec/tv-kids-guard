@@ -73,11 +73,11 @@ python3 -I -B -m unittest discover -s tools -p &#x27;test_*.py&#x27; -v</code></
   <li>界面提供旧版主题、图形资源和控件样式，不依赖原生 Material、VectorDrawable 或 API 21 的文字与按钮接口。</li>
   <li>API 19 更新使用 AlarmManager 和独立服务；API 21 以上保留 JobScheduler。旧系统启用 TLS 1.2，仍验证主机、证书、APK 签名及版本。</li>
   <li>API 19 通过系统安装器、在有效家长维护授权下确认安装；不继承进程重启前的授权，不清除原有密码或时长数据。</li>
-  <li>Android 4.4 没有 Lock Task 和本应用所需的防卸载/强停策略，页面明确显示不支持，不把普通管理员当成系统级保护。发现旧版设备所有者时拒绝不安全解除，不恢复出厂。</li>
+  <li>Android 4.4 没有 Lock Task，也没有本应用使用的 Device Owner 防强停策略。普通管理员仍启用时，<code>PackageManagerService.deletePackageX</code> 的 <code>isPackageDeviceAdmin()</code> 会拒绝直接卸载；系统可先停用管理员，因此仍须保持设置入口拦截。页面按实际状态区分两类保护。发现旧版设备所有者时拒绝不安全解除，不恢复出厂。</li>
 </ul>
 <p>回归覆盖 API 19 的计时/关屏/重启、鉴权、界面资源、权限入口和更新路径，并保留 API 24、33 的相关测试。原生图形截图测试在 API 33 运行，不把预览当作真机截图。小米电视 2 的实机验证仍待 ADB 恢复，未验证厂商后台保活和遥控行为。</p>
 <h2>遥控器输入模式</h2>
-<p>本轮 2.5.6（versionCode 37）按数字键能力选择默认输入模式，并提供本机手动切换。两种模式均不依赖系统输入法（IME）、WebView 或触摸输入。家长验证、首次设置和修改密码、到时锁屏、每日时长、临时加时均须可在有实体数字键或仅有方向键、OK 的遥控器上完成。</p>
+<p>本轮 2.5.7（versionCode 38）按数字键能力选择默认输入模式，并提供本机手动切换。两种模式均不依赖系统输入法（IME）、WebView 或触摸输入。家长验证、首次设置和修改密码、到时锁屏、每日时长、临时加时均须可在有实体数字键或仅有方向键、OK 的遥控器上完成。</p>
 <ul>
   <li>自动检测：未手动选择时，按同一非虚拟 <code>InputDevice</code> 逐个检查 0–9；每个数字支持对应的普通数字键或小键盘数字键即可，不跨设备拼凑完整数字键。完整支持时默认隐藏屏幕数字盘，只显示实体输入区；未报告完整数字键或检测结果未知时显示数字盘，不按品牌或型号硬编码。</li>
   <li>手动选择：系统 keymap 不等于遥控器实际按键，不能把能力报告当作实物按键保证。所有输入页均提供方向键和 OK 可达的「使用屏幕数字盘」或「使用遥控器数字键」切换按钮；选择只保存在本机 <code>tvguard_remote</code>，优先于自动检测。切换只改变输入方式，不更改 PIN、计时或家长授权。</li>
@@ -89,6 +89,23 @@ python3 -I -B -m unittest discover -s tools -p &#x27;test_*.py&#x27; -v</code></
   <li>保留暗色面板、显著的 DPAD 焦点和原有卡片对齐；验证门页与锁屏保留独立主题。隐藏时 Gate/Lock 居中、最大 560dp，<code>PinDialog</code> 恢复最大 560dp 单栏；显示数字盘时分别沿用原最大 900dp 与宽屏最大 760dp 布局。隐藏数字盘不留空位，切换后重排输入区域，并将焦点保留在可见控件上，不改主面板列宽、间距或卡片布局。</li>
 </ul>
 <p>发布前应检查完整数字键、无数字键与检测未知时的默认模式，手动选择优先及本机持久化，所有输入页的切换可达性与隐藏后布局、焦点；同时检查两种输入路径、屏幕删除/确认、返回取消、PIN 遮罩、失败冷却、授权失效和锁屏两种入口。构建与自动化结果由最终发布验证汇总，不把原生渲染预览当作真机证据。小米电视 2 的 ADB 仍待恢复，不能宣称已通过该电视的实机数字盘验收。</p>
+<h2>设置入口保护与恢复</h2>
+<p>本轮以普通应用恢复原有密码拦截为目标，不要求系统预装、root 或 Device Owner。<code>MainActivity.requireParent()</code> 保护图标入口，<code>GuardService</code> / <code>LockActivity</code> 保持额度锁定，<code>AppLockService</code> 保护已识别的设置及卸载页面；三条路径分别验收，不能把图标有密码等同于系统设置受保护。</p>
+<ul>
+  <li>无障碍声明 <code>canRetrieveWindowContent=true</code>，仅调用 <code>getRootInActiveWindow()</code> 获取所属包名并回收节点，不遍历控件、不读取或保存文字。查询可能返回空，窗口事件仍保留为识别来源；查询异常记录日志并在面板提示，定时回查继续重试。</li>
+  <li>连接时清除旧前台和设置解析缓存，250 ms 回查重新查询当前窗口，不依赖重连后必定补发窗口事件。未知包变化时立即重新解析，查询失败约 1 秒重试，同一未知包正常约 30 秒重新识别；局部失败不丢弃已识别的受保护包。</li>
+  <li><code>isEnabled()</code> 检查无障碍总开关及启用组件，兼容完整和缩写组件名；<code>isConnected()</code> 来自服务连接、解绑和销毁回调。配置已启用不代表服务正在运行。普通应用不能自动重新开启系统已关闭的无障碍权限。</li>
+  <li>普通家长授权和当天不限时均不放开设置。只有显式维护授权短时放行；管理员激活返回（含取消）、更新返回或维护到期后恢复拦截；未经验证按返回不露出原设置页。</li>
+  <li><code>AppLockServiceTest</code> 覆盖当前窗口恢复、重连、解析重试、连接状态与维护边界；<code>MainActivityRemoteTest</code>、<code>MainActivitySettingsTest</code> 验证图标鉴权和真实警告。自动化不替代电视上的桌面长按、应用详情和卸载入口验收，不能据此认定本次电视故障根因。</li>
+</ul>
+<h2>防卸载附加保护</h2>
+<p>普通设备管理员仍启用时，系统的直接卸载检查会拒绝移除；这不等于所有设置流程都无法卸载，也不等于要求本应用密码。设置入口拦截才是本轮的日常保护主线。</p>
+<ul>
+  <li>家长在面板按 <code>55</code>，经系统 <code>ACTION_ADD_DEVICE_ADMIN</code> 确认页激活；应用不静默激活。仅在限时维护授权下打开该页，返回后结束维护并按 <code>isAdminActive</code> 读回真实结果。</li>
+  <li>系统 <code>DeviceAdminAdd</code> 的部分流程可通过 <code>uninstallPackageWithActiveAdmins()</code> 停用并卸载。<code>onDisabled</code> 发生在停用后，只能撤销旧授权并尝试拉起密码门，不能否决已经完成的操作。</li>
+  <li>关闭防护仍走 <code>DeviceProtection.remove()</code> 的家长确认和读回核验，不恢复出厂。普通模式不承诺阻止系统强停、清除数据或未识别的厂商入口。</li>
+  <li><code>UninstallProtectionTest</code> 与 <code>DeviceProtectionTest</code> 覆盖 API 19/24/33 的激活维护、返回恢复、停用后重新验证、策略读回与系统确认页无法解析的情况；不是实际卸载验收。</li>
+</ul>
 <h2>正式发布</h2>
 <p>私钥保存在仓库外；默认读取 <code>~/.config/tv-kids-guard/signing.properties</code>，也可用 <code>TVGUARD_SIGNING_PROPERTIES</code> 指定：</p>
 <pre><code>storeFile=/绝对路径/release.keystore

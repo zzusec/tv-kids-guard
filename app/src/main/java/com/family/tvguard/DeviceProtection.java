@@ -5,6 +5,7 @@ import android.app.ActivityManager;
 import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
+import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.UserManager;
@@ -74,6 +75,20 @@ final class DeviceProtection {
             recordError(operation, e);
             return false;
         }
+    }
+
+    /** An active administrator blocks direct removal, but Settings can deactivate it first. */
+    static boolean isUninstallProtected(Context ctx) {
+        return isUninstallBlocked(ctx) || isAdminActive(ctx);
+    }
+
+    /** System confirmation page that activates the administrator; never activates it silently. */
+    @SuppressWarnings("deprecation")
+    static Intent activationIntent(Context ctx) {
+        return new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
+                .putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, admin(ctx))
+                .putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                        "管理员启用期间会限制直接卸载，请同时保持设置保护开启。家长在面板关闭防护时会一并解除。");
     }
 
     static boolean isLockTaskAllowed(Context ctx) {
@@ -374,16 +389,18 @@ final class DeviceProtection {
         boolean owner = isDeviceOwner(ctx);
         boolean active = isAdminActive(ctx);
         result.append("设备管理：").append(owner ? "设备所有者" : active ? "普通管理员" : "未启用");
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
-            result.append("\n防卸载/强停：Android 4.4 不支持系统级限制");
-        } else if (owner) {
+        if (owner && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             boolean sealed = isUninstallBlocked(ctx) && isUserControlBlocked(ctx);
             result.append("\n禁止卸载/强停：").append(sealed ? "已生效" : "未完全生效");
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
                 result.append("（旧版 Android 下影响所有应用）");
             }
+        } else if (active) {
+            result.append("\n直接卸载限制：管理员已启用");
+            result.append("\n设置保护仍需开启，防止管理员被停用");
+            result.append("\n禁止强停：未开启（需要设备所有者）");
         } else {
-            result.append("\n防卸载/强停：未开启（电视上有账号时系统不允许）");
+            result.append("\n禁止卸载/强停：未开启");
         }
         String operation = "查询当前锁定模式";
         try {
