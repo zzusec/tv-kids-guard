@@ -301,7 +301,7 @@ public class LockActivity extends Activity {
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
                 cancelParentSelect();
                 physicalInput = true;
-                inputMode.onPhysicalDigit();
+                inputMode.onPhysicalDigit(event);
                 keypad.usePhysicalInput();
                 enterDigit(digit);
             }

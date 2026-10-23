@@ -136,20 +136,41 @@ public class RemoteInputModeTest {
     }
 
     @Test
-    public void partialDevicesCannotCombineTheirKeysToSuppressThePad() {
+    public void partialDevicesCombineTheirKeysToSuppressThePad() {
         DigitInputDevice first = DigitInputDevice.add(false, InputDevice.SOURCE_KEYBOARD,
                 digits(KeyEvent.KEYCODE_0, 0, 5));
         DigitInputDevice second = DigitInputDevice.add(false, InputDevice.SOURCE_DPAD,
                 digits(KeyEvent.KEYCODE_NUMPAD_0, 5, 10));
-        assertFalse(RemoteInputMode.hasPhysicalDigits());
+        assertTrue("The union of two partial key maps covers 0-9",
+                RemoteInputMode.hasPhysicalDigits());
         assertEquals(1, first.queries);
         assertEquals(1, second.queries);
         createControl();
-        assertMode(true);
+        assertMode(false);
+        assertTrue(primary.hasFocus());
+    }
 
-        DigitInputDevice.add(false, InputDevice.SOURCE_DPAD,
+    @Test
+    public void devicesAreNotAskedOnceTheUnionAlreadyCoversEveryDigit() {
+        DigitInputDevice first = DigitInputDevice.add(false, InputDevice.SOURCE_KEYBOARD,
                 digits(KeyEvent.KEYCODE_0, 0, 10));
+        DigitInputDevice later = DigitInputDevice.add(false, InputDevice.SOURCE_DPAD,
+                digits(KeyEvent.KEYCODE_NUMPAD_0, 0, 10));
         assertTrue(RemoteInputMode.hasPhysicalDigits());
+        assertEquals(1, first.queries);
+        assertEquals("A complete union must not keep querying the remaining devices",
+                0, later.queries);
+    }
+
+    @Test
+    public void aUnionStillMissingOneDigitLeavesThePadUp() {
+        DigitInputDevice.add(false, InputDevice.SOURCE_KEYBOARD,
+                digits(KeyEvent.KEYCODE_0, 0, 5));
+        DigitInputDevice.add(false, InputDevice.SOURCE_DPAD,
+                digits(KeyEvent.KEYCODE_NUMPAD_0, 5, 9));
+        assertFalse(RemoteInputMode.hasPhysicalDigits());
+        createControl();
+        assertMode(true);
     }
 
     @Test
@@ -221,6 +242,109 @@ public class RemoteInputModeTest {
         assertEquals(0, padActions);
         createControl();
         assertMode(true);
+    }
+
+    @Test
+    public void aDigitFromARealDeviceRetiresThePadEvenWhenItsKeyMapDeniedDigits() {
+        DigitInputDevice remote = DigitInputDevice.add(false, InputDevice.SOURCE_DPAD,
+                digits(KeyEvent.KEYCODE_0, 0, 5));
+        assertFalse("A five-digit map cannot suppress the pad", RemoteInputMode.hasPhysicalDigits());
+        createControl();
+        assertMode(true);
+
+        physicalDigit(remote.id, KeyEvent.KEYCODE_7);
+        assertMode(false);
+        assertTrue(primary.hasFocus());
+        assertEquals(1, changes);
+        assertTrue(remotePrefs.getBoolean("physical_digits_seen", false));
+
+        createControl();
+        assertMode(false);
+        assertTrue(primary.hasFocus());
+    }
+
+    @Test
+    public void aPinnedPadSurvivesTheDigitsTheRemoteReallyTypes() {
+        DigitInputDevice remote = DigitInputDevice.add(false, InputDevice.SOURCE_KEYBOARD,
+                digits(KeyEvent.KEYCODE_0, 0, 10));
+        createControl();
+        assertMode(false);
+        press(KeyEvent.KEYCODE_DPAD_DOWN);
+        assertEquals("keypad_toggle", focusedTag());
+        press(KeyEvent.KEYCODE_DPAD_CENTER);
+        assertMode(true);
+        assertEquals(1, changes);
+        assertTrue(remotePrefs.getBoolean("pad_pinned", false));
+
+        physicalDigit(remote.id, KeyEvent.KEYCODE_3);
+        assertMode(true);
+        assertEquals("A pinned pad must not fire the change callback again", 1, changes);
+        assertTrue(remotePrefs.getBoolean("physical_digits_seen", false));
+
+        createControl();
+        assertMode(true);
+        assertEquals("key_1", focusedTag());
+    }
+
+    @Test
+    public void aPadChosenWhileNothingWasKnownYieldsToTheFirstRealDigit() {
+        createControl();
+        assertMode(true);
+        press(KeyEvent.KEYCODE_DPAD_UP);
+        assertEquals("keypad_toggle", focusedTag());
+        press(KeyEvent.KEYCODE_DPAD_CENTER);
+        assertMode(false);
+        press(KeyEvent.KEYCODE_DPAD_DOWN);
+        press(KeyEvent.KEYCODE_DPAD_CENTER);
+        assertMode(true);
+        assertFalse("Reopening the pad on unknown hardware is not an override",
+                remotePrefs.getBoolean("pad_pinned", false));
+
+        DigitInputDevice remote = DigitInputDevice.add(false, InputDevice.SOURCE_DPAD,
+                digits(KeyEvent.KEYCODE_0, 0, 10));
+        physicalDigit(remote.id, KeyEvent.KEYCODE_5);
+        assertMode(false);
+        assertEquals(3, changes);
+        assertTrue(remotePrefs.getBoolean("physical_digits_seen", false));
+    }
+
+    @Test
+    public void syntheticAndVirtualDigitsTeachNothing() {
+        createControl();
+        assertMode(true);
+
+        physicalDigit(-1, KeyEvent.KEYCODE_7);
+        assertMode(true);
+        assertEquals(0, changes);
+        assertFalse(remotePrefs.contains("physical_digits_seen"));
+
+        DigitInputDevice virtual = DigitInputDevice.add(true, InputDevice.SOURCE_KEYBOARD,
+                digits(KeyEvent.KEYCODE_0, 0, 10));
+        physicalDigit(virtual.id, KeyEvent.KEYCODE_7);
+        assertMode(true);
+        assertEquals(0, changes);
+        assertFalse("A virtual device proves nothing about the remote",
+                remotePrefs.contains("physical_digits_seen"));
+        assertFalse(remotePrefs.contains("pad_pinned"));
+    }
+
+    @Test
+    public void learningDigitsLeavesGuardSettingsAndAuthorizationAlone() {
+        Prefs prefs = new Prefs(context);
+        prefs.setPassword("246813");
+        prefs.setDailyLimitMinutes(30);
+        Map<String, ?> before = new HashMap<>(context
+                .getSharedPreferences("tvguard_prefs", Context.MODE_PRIVATE).getAll());
+        DigitInputDevice remote = DigitInputDevice.add(false, InputDevice.SOURCE_DPAD,
+                digits(KeyEvent.KEYCODE_0, 0, 4));
+        createControl();
+        assertMode(true);
+        physicalDigit(remote.id, KeyEvent.KEYCODE_NUMPAD_7);
+        assertMode(false);
+        assertEquals(before, context.getSharedPreferences("tvguard_prefs", Context.MODE_PRIVATE)
+                .getAll());
+        assertFalse(AdminSession.isActive());
+        assertEquals(0, padActions);
     }
 
     @Test
@@ -308,15 +432,30 @@ public class RemoteInputModeTest {
     }
 
     private void press(int code) {
-        assertTrue(send(KeyEvent.ACTION_DOWN, code, 0, 0));
-        assertTrue(send(KeyEvent.ACTION_UP, code, 0, 0));
+        press(-1, code);
+    }
+
+    private void press(int deviceId, int code) {
+        assertTrue(send(KeyEvent.ACTION_DOWN, code, 0, 0, deviceId));
+        assertTrue(send(KeyEvent.ACTION_UP, code, 0, 0, deviceId));
     }
 
     private boolean send(int action, int code, int repeat, int flags) {
-        KeyEvent event = new KeyEvent(0L, 0L, action, code, repeat, 0, -1, 0, flags);
+        return send(action, code, repeat, flags, -1);
+    }
+
+    private boolean send(int action, int code, int repeat, int flags, int deviceId) {
+        KeyEvent event = new KeyEvent(0L, 0L, action, code, repeat, 0, deviceId, 0, flags);
         boolean consumed = mode.handleKeyEvent(event) || keypad.handleKeyEvent(event);
         ShadowLooper.idleMainLooper();
         return consumed;
+    }
+
+    /** The screens call this when a digit keycode arrives; the test drives it the same way. */
+    private void physicalDigit(int deviceId, int code) {
+        KeyEvent event = new KeyEvent(0L, 0L, KeyEvent.ACTION_DOWN, code, 0, 0, deviceId, 0, 0);
+        mode.onPhysicalDigit(event);
+        ShadowLooper.idleMainLooper();
     }
 
     private static int[] digits(int firstCode, int from, int until) {
@@ -330,6 +469,7 @@ public class RemoteInputModeTest {
     public static class DigitInputDevice extends ShadowInputDevice {
         private static final Map<Integer, InputDevice> devices = new LinkedHashMap<>();
         private final Set<Integer> supportedKeys = new HashSet<>();
+        private int id;
         private boolean virtual;
         private int sources;
         private int queries;
@@ -342,7 +482,8 @@ public class RemoteInputModeTest {
             shadow.virtual = virtual;
             shadow.sources = sources;
             shadow.addKeys(keys);
-            devices.put(devices.size() + 1, device);
+            shadow.id = devices.size() + 1;
+            devices.put(shadow.id, device);
             return shadow;
         }
 

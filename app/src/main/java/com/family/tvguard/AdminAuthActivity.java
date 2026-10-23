@@ -203,7 +203,7 @@ public class AdminAuthActivity extends Activity {
         if (code == KeyEvent.KEYCODE_BACK) {
             onBackPressed();
         } else if (digit >= 0) {
-            inputMode.onPhysicalDigit();
+            inputMode.onPhysicalDigit(event);
             keypad.usePhysicalInput();
             appendDigit(digit);
         } else if (code == KeyEvent.KEYCODE_DEL || code == KeyEvent.KEYCODE_DPAD_LEFT) {
