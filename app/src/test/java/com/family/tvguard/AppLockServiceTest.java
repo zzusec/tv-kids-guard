@@ -287,7 +287,7 @@ public class AppLockServiceTest {
     }
 
     @Test
-    public void ordinaryParentSessionDoesNotAuthorizeSystemSettings() {
+    public void verifiedParentSessionIsNotGatedAgainUntilItExpires() {
         register(new Intent(Settings.ACTION_SETTINGS), "vendor.settings");
         AdminSession.grant();
 
@@ -295,11 +295,17 @@ public class AppLockServiceTest {
 
         assertTrue(AdminSession.isActive());
         assertFalse(AdminSession.isMaintenanceActive());
+        assertNull("密码已经输入过，就不许再要求家长输入第二次",
+                shadowOf(context).getNextStartedActivity());
+
+        // The session is a lease, not a pass: after it expires the settings page is protected again.
+        ShadowLooper.idleMainLooper(3, TimeUnit.MINUTES);
+        window("vendor.settings");
         assertGateStarted();
     }
 
     @Test
-    public void endingMaintenanceRestoresSettingsGateWithoutANewWindowEvent() {
+    public void endingMaintenanceKeepsTheVerifiedParentSessionQuiet() {
         register(new Intent(Settings.ACTION_SETTINGS), "vendor.settings");
         foregroundRoot("vendor.settings");
         AdminSession.grant();
@@ -313,6 +319,11 @@ public class AppLockServiceTest {
         ShadowLooper.idleMainLooper(300, TimeUnit.MILLISECONDS);
 
         assertTrue(AdminSession.isActive());
+        assertNull("退出维护不得让已验证的家长再输一次密码",
+                shadowOf(context).getNextStartedActivity());
+
+        // Suspension is tied to the session, never to the settings page itself.
+        ShadowLooper.idleMainLooper(3, TimeUnit.MINUTES);
         assertGateStarted();
     }
 

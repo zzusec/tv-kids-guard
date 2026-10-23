@@ -433,6 +433,16 @@ public class GuardService extends Service {
         return parentUiLeaseActive() || (consoleVisible && AdminSession.isActive());
     }
 
+    /**
+     * Whether a parent screen is the UI the family is looking at right now. The settings watcher
+     * needs this because the parent panel is translucent: the page it was opened over stays
+     * visible underneath it and keeps reporting itself as the foreground window.
+     */
+    static boolean isParentUiOnScreen() {
+        GuardService service = instance;
+        return service != null && service.isParentUiVisible();
+    }
+
     private boolean parentUiLeaseActive() {
         return parentUiLeaseElapsed > SystemClock.elapsedRealtime();
     }

@@ -2,7 +2,10 @@ package com.family.tvguard;
 
 import android.os.SystemClock;
 
-/** Parent authentication is short-lived and never survives process death or reboot. */
+/**
+ * Parent authentication is short-lived and never survives process death or reboot. While it is
+ * live the settings watcher stands down: the PIN is asked for once per session, never twice.
+ */
 final class AdminSession {
 
     private static final long TIMEOUT_MILLIS = 3 * 60_000L;

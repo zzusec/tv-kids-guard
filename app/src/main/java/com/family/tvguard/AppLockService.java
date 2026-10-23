@@ -28,7 +28,8 @@ import java.util.Set;
  * <p>Two things are enforced here. Once the daily quota is spent, every window other than the
  * guard's own is replaced by the lock. And the settings screens that hold the app's own
  * permissions and uninstall button stay behind the parent gate all day, because those are the
- * routes a child uses to switch the guard off.
+ * routes a child uses to switch the guard off. A verified parent session suspends both: the PIN is
+ * asked for once, and only the parent's own 立即锁定 puts the lock back.
  */
 public class AppLockService extends AccessibilityService {
 
@@ -141,8 +142,17 @@ public class AppLockService extends AccessibilityService {
         if (prefs == null) {
             prefs = new Prefs(this);
         }
-        if (!prefs.isProtectionEnabled() || foregroundPackage.isEmpty()
-                || AdminSession.isMaintenanceActive()) {
+        if (!prefs.isProtectionEnabled() || foregroundPackage.isEmpty()) {
+            return;
+        }
+        // A parent who has just entered the PIN is never asked to enter it again: the session runs
+        // until it expires, until the parent leaves the panel, or until the parent locks the
+        // television on purpose (the panel's 33). This is not a nicety. The parent panel is
+        // translucent, so the settings page it was opened over stays visible underneath and keeps
+        // reporting itself as the foreground window. Watching that window without this rule pushed
+        // a fresh gate over the panel every few hundred milliseconds; the panel's onPause then
+        // revoked the session, so the next gate really did demand the password again, forever.
+        if (parentUiOnScreen() || AdminSession.isActive()) {
             return;
         }
         if (foregroundPackage.equals(getPackageName()) || foregroundPackage.equals(SYSTEM_UI)) {
@@ -153,6 +163,12 @@ public class AppLockService extends AccessibilityService {
         } else if (isSettingsPackage(foregroundPackage)) {
             AdminAuthActivity.launch(this);
         }
+    }
+
+    /** One of the guard's own parent screens is what the family is looking at. */
+    private boolean parentUiOnScreen() {
+        return AdminAuthActivity.isVisible() || MainActivity.isAuthorizedVisible()
+                || GuardService.isParentUiOnScreen();
     }
 
     /**
