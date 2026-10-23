@@ -69,7 +69,7 @@ python3 -I -B -m unittest discover -s tools -p &#x27;test_*.py&#x27; -v</code></
 <h2>Android 4.4 兼容</h2>
 <p>最低版本为 API 19，现代 Android 路径保留。Robolectric 固定为 4.12.2：这是仍支持 API 19 的版本，4.13 起移除了该运行时。</p>
 <ul>
-  <li>亮屏计时在 API 19 使用 <code>PowerManager.isScreenOn()</code>；关屏暂停、用量持久化和家长密码规则不变。</li>
+  <li>亮屏计时在 API 19 使用 <code>PowerManager.isScreenOn()</code>；关屏、待机和锁定时暂停，用量持久化和家长密码规则不变。</li>
   <li>界面提供旧版主题、图形资源和控件样式，不依赖原生 Material、VectorDrawable 或 API 21 的文字与按钮接口。</li>
   <li>API 19 更新使用 AlarmManager 和独立服务；API 21 以上保留 JobScheduler。旧系统启用 TLS 1.2，仍验证主机、证书、APK 签名及版本。</li>
   <li>API 19 通过系统安装器、在有效家长维护授权下确认安装；不继承进程重启前的授权，不清除原有密码或时长数据。</li>
@@ -89,19 +89,28 @@ python3 -I -B -m unittest discover -s tools -p &#x27;test_*.py&#x27; -v</code></
   <li>保留暗色面板、显著的 DPAD 焦点和原有卡片对齐；验证门页与锁屏保留独立主题。隐藏时 Gate/Lock 居中、最大 560dp，<code>PinDialog</code> 恢复最大 560dp 单栏；显示数字盘时分别沿用原最大 900dp 与宽屏最大 760dp 布局。隐藏数字盘不留空位，切换后重排输入区域，并将焦点保留在可见控件上，不改主面板列宽、间距或卡片布局。</li>
 </ul>
 <p>发布前应检查完整数字键、无数字键与检测未知时的默认模式，手动选择优先及本机持久化，所有输入页的切换可达性与隐藏后布局、焦点；同时检查两种输入路径、屏幕删除/确认、返回取消、PIN 遮罩、失败冷却、授权失效和锁屏两种入口。构建与自动化结果由最终发布验证汇总，不把原生渲染预览当作真机证据。小米电视 2 的 ADB 仍待恢复，不能宣称已通过该电视的实机数字盘验收。</p>
+<h2>计时与右上角</h2>
+<p>本轮 2.5.10（versionCode 41）处理 Sony BRAVIA 4K 2015 上确认的两件事：待机被算成观看时长，以及「今天不限时」时右上角完全空白。</p>
+<ul>
+  <li>计时基线是 <code>SystemClock.uptimeMillis()</code>，不是 <code>elapsedRealtime()</code>。后者在深度休眠期间照旧前进，而前台服务的 1 秒 tick 在待机时会被系统停掉，醒来后一次补跑就把整段挂钟差当作观看时长扣进当天额度——Sony BRAVIA 4K 2015 上家长确认电视可以连续数十小时处于待机，并要求待机一律不计入。<code>countedDelta()</code> 同时封顶单个周期的补量（<code>MAX_COUNTED_TICK_MILLIS</code>，4 秒），主线程被卡住、看门狗补跑或服务重启都只会补一个周期。亮屏、灭屏、服务创建和解除锁定四个入口都重新对齐基线，因此熄屏的分钟不会在唤醒那一刻被追溯扣除。</li>
+  <li>额度判定仍是「亮屏且未锁定」，所以关屏、锁屏与待机都不计时；跨到更晚的日历日才由 <code>Prefs.rollOverIfNeeded()</code> 清零，时钟回拨不给免费的额度重置。</li>
+  <li>右上角角标由 <code>GuardService</code> 持有：配额日内 <code>updateCountdown()</code> 显示「剩余 MM:SS」，最后 5 分钟转红；家长在锁屏输入密码使今天不限时后，<code>showUnlimitedNotice()</code> 保留同一枚角标并改为琥珀色「今天不限时」，与面板的 <code>today_override</code> 提示一致。空白角标会被孩子读成「防护已关」，也让家长无法确认防护还在跑。锁定态不显示角标，只有全屏黑幕与锁屏 Activity。</li>
+  <li>悬浮窗权限缺失时不贴角标（API 23 起 <code>Settings.canDrawOverlays</code>），面板另有「倒计时未开启：需允许悬浮窗权限」警告；API 19/20 由清单权限决定，不存在运行时撤销。</li>
+  <li><code>CountdownOverlayTest</code> 在 API 19/24/33 断言：模拟一小时深度休眠后 tick 不增加当天时长；tick 被饿 20 分钟后最多补 4 秒；熄屏十分钟不扣、唤醒后只从亮屏那刻开始计；不限时时窗口里恰有一枚文本角标且文字为「今天不限时」，反复 tick 不叠加；切回配额日重新显示「剩余 MM:SS」；无悬浮窗权限时不贴任何窗口；额度耗尽时进入锁定且没有倒计时角标。</li>
+</ul>
 <h2>设置入口保护与恢复</h2>
-<p>本轮 2.5.9（versionCode 40）以普通应用恢复原有密码拦截为目标，不要求系统预装、root 或 Device Owner：每次进入设置页都要求家长密码，同时消除「输入密码后再次要求输入密码」的验证死循环。<code>MainActivity.requireParent()</code> 保护图标入口，<code>GuardService</code> / <code>LockActivity</code> 保持额度锁定，<code>AppLockService</code> 保护已识别的设置及卸载页面；三条路径分别验收，不能把图标有密码等同于系统设置受保护。</p>
+<p>2.5.9（versionCode 40）以普通应用恢复原有密码拦截为目标，不要求系统预装、root 或 Device Owner：每次进入设置页都要求家长密码，同时消除「输入密码后再次要求输入密码」的验证死循环。<code>MainActivity.requireParent()</code> 保护图标入口，<code>GuardService</code> / <code>LockActivity</code> 保持额度锁定，<code>AppLockService</code> 保护已识别的设置及卸载页面；三条路径分别验收，不能把图标有密码等同于系统设置受保护。</p>
 <ul>
   <li>无障碍声明 <code>canRetrieveWindowContent=true</code>，仅调用 <code>getRootInActiveWindow()</code> 获取所属包名并回收节点，不遍历控件、不读取或保存文字。查询可能返回空，窗口事件仍保留为识别来源；查询异常记录日志并在面板提示，定时回查继续重试。</li>
   <li>连接时清除旧前台和设置解析缓存，250 ms 回查重新查询当前窗口，不依赖重连后必定补发窗口事件。未知包变化时立即重新解析，查询失败约 1 秒重试，同一未知包正常约 30 秒重新识别；局部失败不丢弃已识别的受保护包。</li>
   <li><code>isEnabled()</code> 检查无障碍总开关及启用组件，兼容完整和缩写组件名；<code>isConnected()</code> 来自服务连接、解绑和销毁回调。配置已启用不代表服务正在运行。普通应用不能自动重新开启系统已关闭的无障碍权限。</li>
   <li>每次进入设置页都要求家长密码：<code>AdminSession</code> 有效不作为设置页通行证，验证页与时长锁屏照常拉起。Sony BRAVIA 4K 2015 上的死循环不是靠记住密码修的，而是靠下一条规则修的：管理面板是半透明窗口，它下面的设置页仍然可见并持续上报自己是前台窗口，拦截服务因此在面板之上反复拉起验证页；面板 <code>onPause</code> 会撤销会话，下一个验证页就真的再次要求输入密码，输入后循环重现。日志证据是 <code>MainActivity</code> 启动后约 0.15～0.4 秒紧跟一条 <code>AdminAuthActivity</code> 启动，循环到家长放弃为止。</li>
-  <li>拦截服务在自家家长界面在屏时一律不动手，这是本轮唯一的防死循环机制：验证页可见、已授权面板可见或 <code>GuardService</code> 的家长界面租约有效都不再拉起验证页或锁屏，不依赖具体机型的前台窗口判定。当天不限时本身不放开设置，仍需家长密码。</li>
+  <li>拦截服务在自家家长界面在屏时一律不动手，这是现行唯一的防死循环机制：验证页可见、已授权面板可见或 <code>GuardService</code> 的家长界面租约有效都不再拉起验证页或锁屏，不依赖具体机型的前台窗口判定。当天不限时本身不放开设置，仍需家长密码。</li>
   <li>只有显式维护授权短时放行系统页；管理员激活返回（含取消）、更新返回或维护到期后恢复拦截；未经验证按返回不露出原设置页。</li>
   <li><code>AppLockServiceTest</code> 覆盖当前窗口恢复、重连、解析重试、连接状态与维护边界，并断言「有效会话之上的设置页仍要密码」「维护结束后同一个设置页重新要求密码」；<code>SettingsGateLoopTest</code> 用真实的验证页→面板交接和「面板之下的设置页仍上报前台」复现死循环，断言面板在屏时不弹验证页也不弹锁屏、家长离开后同一个设置页重新要密码、时长用尽的锁屏在家长离开面板后回来；<code>MainActivityRemoteTest</code>、<code>MainActivitySettingsTest</code> 验证图标鉴权和真实警告。自动化不替代电视上的桌面长按、应用详情和卸载入口验收，不能据此认定本次电视故障根因。</li>
 </ul>
 <h2>防卸载附加保护</h2>
-<p>普通设备管理员仍启用时，系统的直接卸载检查会拒绝移除；这不等于所有设置流程都无法卸载，也不等于要求本应用密码。设置入口拦截才是本轮的日常保护主线。</p>
+<p>普通设备管理员仍启用时，系统的直接卸载检查会拒绝移除；这不等于所有设置流程都无法卸载，也不等于要求本应用密码。设置入口拦截才是日常保护主线。</p>
 <ul>
   <li>家长在面板按 <code>55</code>，经系统 <code>ACTION_ADD_DEVICE_ADMIN</code> 确认页激活；应用不静默激活。仅在限时维护授权下打开该页，返回后结束维护并按 <code>isAdminActive</code> 读回真实结果。</li>
   <li>系统 <code>DeviceAdminAdd</code> 的部分流程可通过 <code>uninstallPackageWithActiveAdmins()</code> 停用并卸载。<code>onDisabled</code> 发生在停用后，只能撤销旧授权并尝试拉起密码门，不能否决已经完成的操作。</li>

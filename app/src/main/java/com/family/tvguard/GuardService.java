@@ -37,6 +37,10 @@ public class GuardService extends Service {
     private static final String CHANNEL_ID = "tvguard";
     private static final int NOTIF_ID = 1001;
     private static final String TAG = "TvGuard";
+    /** A starved or replayed tick may never dump a long wall-clock gap into the day's counter. */
+    static final long MAX_COUNTED_TICK_MILLIS = 4000L;
+    /** What the corner says while the admin has opened the day with the password. */
+    static final String UNLIMITED_NOTICE_TEXT = "今天不限时";
 
     private static GuardService instance;
     private static String lastFailure = "";
@@ -54,6 +58,12 @@ public class GuardService extends Service {
 
     private long usedMillis;
     private long lastTickElapsed;
+    /**
+     * Counting baseline, deliberately on {@code uptimeMillis} rather than {@code elapsedRealtime}:
+     * the latter keeps running while the television is in deep sleep, so a standby that starves the
+     * ticker would otherwise feed the day's quota with hours the family was not watching.
+     */
+    private long lastTickUptime;
     private long lastPersistElapsed;
     private long lastLockFocusElapsed;
     private volatile boolean locked;
@@ -80,6 +90,7 @@ public class GuardService extends Service {
         @Override
         public void onReceive(Context context, Intent intent) {
             lastTickElapsed = SystemClock.elapsedRealtime();
+            lastTickUptime = SystemClock.uptimeMillis();
             String action = intent.getAction();
             if (Intent.ACTION_SCREEN_OFF.equals(action)) {
                 // Power key turns the screen off normally, even while locked. Flush the
@@ -133,6 +144,7 @@ public class GuardService extends Service {
         powerManager = (PowerManager) getSystemService(POWER_SERVICE);
         usedMillis = prefs.getUsedSeconds() * 1000L;
         lastTickElapsed = SystemClock.elapsedRealtime();
+        lastTickUptime = SystemClock.uptimeMillis();
         lastPersistElapsed = lastTickElapsed;
         createChannel();
         startForeground(NOTIF_ID, buildNotification());
@@ -233,14 +245,8 @@ public class GuardService extends Service {
         }
 
         long now = SystemClock.elapsedRealtime();
-        long delta = now - lastTickElapsed;
         lastTickElapsed = now;
-        if (delta < 0L) {
-            delta = 0L;
-        }
-        if (delta > 4000L) {
-            delta = 4000L;
-        }
+        long delta = countedDelta(SystemClock.uptimeMillis());
 
         boolean screenOn = isScreenOn();
         if (screenOn && !locked) {
@@ -264,8 +270,10 @@ public class GuardService extends Service {
                 keepLockInFront(now);
             }
         } else if (prefs.isUnlockedToday()) {
-            // The admin opened the day with the password: no countdown, no further locking.
-            removeCountdown();
+            // The admin opened the day with the password: the quota is off, but the corner has to
+            // say so. A blank corner reads to a child as "the guard is off", and leaves the parent
+            // with no proof that the protection is still running.
+            showUnlimitedNotice();
         } else {
             updateCountdown(remaining);
         }
@@ -284,6 +292,20 @@ public class GuardService extends Service {
     private boolean isScreenOn() {
         return powerManager != null && (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH
                 ? powerManager.isInteractive() : powerManager.isScreenOn());
+    }
+
+    /**
+     * Milliseconds of watching since the previous tick. The baseline is {@code uptimeMillis}, which
+     * does not advance while the television is suspended, so standby never counts; the ceiling keeps
+     * a starved or replayed tick from dumping a long gap into the day's counter.
+     */
+    private long countedDelta(long nowUptime) {
+        long delta = nowUptime - lastTickUptime;
+        lastTickUptime = nowUptime;
+        if (delta < 0L) {
+            return 0L;
+        }
+        return Math.min(delta, MAX_COUNTED_TICK_MILLIS);
     }
 
     boolean isLocked() {
@@ -335,6 +357,7 @@ public class GuardService extends Service {
         lockActivityVisible = false;
         inputBuffer.setLength(0);
         lastTickElapsed = SystemClock.elapsedRealtime();
+        lastTickUptime = SystemClock.uptimeMillis();
         removeShield();
         LockActivity.dismiss();
         showCountdown();
@@ -587,6 +610,21 @@ public class GuardService extends Service {
                 : String.format(java.util.Locale.US, "%02d:%02d", minutes, seconds % 60L);
         countdownText.setText("剩余 " + clock);
         countdownText.setTextColor(seconds <= 300L ? Color.parseColor("#FF6B6B") : Color.WHITE);
+    }
+
+    /**
+     * The corner for a day the admin opened with the password. The quota is off, but the pill
+     * stays up and says so: a blank corner reads to a child as "the guard is off", and leaves the
+     * parent without any proof that the protection is still running. Amber, the same colour the
+     * parent panel uses for its "今天不限时" chip.
+     */
+    private void showUnlimitedNotice() {
+        showCountdown();
+        if (!countdownAttached || countdownText == null) {
+            return;
+        }
+        countdownText.setText(UNLIMITED_NOTICE_TEXT);
+        countdownText.setTextColor(Color.parseColor("#FFB84D"));
     }
 
     private void removeCountdown() {
