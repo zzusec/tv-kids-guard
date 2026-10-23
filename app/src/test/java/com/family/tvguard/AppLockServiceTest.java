@@ -287,7 +287,7 @@ public class AppLockServiceTest {
     }
 
     @Test
-    public void verifiedParentSessionIsNotGatedAgainUntilItExpires() {
+    public void liveParentSessionAloneDoesNotOpenSystemSettings() {
         register(new Intent(Settings.ACTION_SETTINGS), "vendor.settings");
         AdminSession.grant();
 
@@ -295,17 +295,13 @@ public class AppLockServiceTest {
 
         assertTrue(AdminSession.isActive());
         assertFalse(AdminSession.isMaintenanceActive());
-        assertNull("密码已经输入过，就不许再要求家长输入第二次",
-                shadowOf(context).getNextStartedActivity());
-
-        // The session is a lease, not a pass: after it expires the settings page is protected again.
-        ShadowLooper.idleMainLooper(3, TimeUnit.MINUTES);
-        window("vendor.settings");
         assertGateStarted();
+        // The session is not a pass: the PIN is asked for on every visit to a settings page, as
+        // long as no parent screen of the guard's own is on top (see SettingsGateLoopTest).
     }
 
     @Test
-    public void endingMaintenanceKeepsTheVerifiedParentSessionQuiet() {
+    public void endingMaintenanceRestoresTheSettingsGateEvenForAVerifiedParent() {
         register(new Intent(Settings.ACTION_SETTINGS), "vendor.settings");
         foregroundRoot("vendor.settings");
         AdminSession.grant();
@@ -318,13 +314,10 @@ public class AppLockServiceTest {
         AdminSession.endMaintenance();
         ShadowLooper.idleMainLooper(300, TimeUnit.MILLISECONDS);
 
+        // Maintenance is the only pass a live session gets, and only for the system confirm pages
+        // the parent deliberately opened. The moment it ends, the settings page asks again.
         assertTrue(AdminSession.isActive());
-        assertNull("退出维护不得让已验证的家长再输一次密码",
-                shadowOf(context).getNextStartedActivity());
-
-        // Suspension is tied to the session, never to the settings page itself.
-        ShadowLooper.idleMainLooper(3, TimeUnit.MINUTES);
-        assertGateStarted();
+        assertGateStarted("维护结束后设置页必须重新要求家长密码");
     }
 
     @Test
@@ -538,8 +531,12 @@ public class AppLockServiceTest {
     }
 
     private void assertGateStarted() {
+        assertGateStarted("The settings surface must launch the parent gate");
+    }
+
+    private void assertGateStarted(String message) {
         Intent next = shadowOf(context).getNextStartedActivity();
-        assertNotNull("The settings surface must launch the parent gate", next);
+        assertNotNull(message, next);
         assertEquals(AdminAuthActivity.class.getName(), next.getComponent().getClassName());
     }
 

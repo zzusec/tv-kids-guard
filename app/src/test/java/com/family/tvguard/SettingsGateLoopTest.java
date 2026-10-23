@@ -39,8 +39,9 @@ import static org.robolectric.Shadows.shadowOf;
  * The watcher used to answer that by raising a fresh gate over the panel, which revoked the session
  * in the panel's onPause, which made the gate really ask for the PIN again — forever.
  *
- * <p>Product rule proven here: once the PIN has been entered, nothing locks the parent out again
- * until the session ends or the parent chooses 立即锁定.
+ * <p>Product rule proven here: every visit to a settings page costs a PIN, but the guard never
+ * raises a gate or a lock over a parent screen of its own that is already on screen. Loop safety
+ * comes from that one rule alone, not from remembering the PIN.
  */
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = {24, 33}, shadows = {SettingsGateLoopTest.BehindWindowShadow.class})
@@ -120,12 +121,14 @@ public class SettingsGateLoopTest {
             ShadowLooper.idleMainLooper(500, TimeUnit.MILLISECONDS);
         }
 
-        assertFalse("验证通过后不得再次弹出家长验证", activityStarted(AdminAuthActivity.class));
-        assertFalse("验证通过后不得弹出时长锁屏", activityStarted(LockActivity.class));
+        assertFalse("家长面板在屏时不得再次弹出验证页", activityStarted(AdminAuthActivity.class));
+        assertFalse("家长面板在屏时不得弹出时长锁屏", activityStarted(LockActivity.class));
         assertTrue("面板在设置页之上时必须保留家长授权", AdminSession.isActive());
         assertTrue(MainActivity.isAuthorizedVisible());
 
-        // Leaving the panel ends the session, and the same settings page is protected again.
+        // Leaving the panel ends the session, and the same settings page asks for the PIN again.
+        // The PIN is not remembered as a pass: the loop is stopped only by the panel being on
+        // screen, which is what keeps this reproducible for a family.
         panelController.pause().stop().destroy();
         panelController = null;
         assertFalse(AdminSession.isActive());
@@ -133,26 +136,55 @@ public class SettingsGateLoopTest {
 
         window(SONY_SETTINGS);
 
-        assertTrue("家长离开后设置页必须重新受保护", activityStarted(AdminAuthActivity.class));
+        assertTrue("家长离开后设置页必须重新要求密码", activityStarted(AdminAuthActivity.class));
     }
 
     @Test
-    public void verifiedSessionKeepsTheQuotaLockAwayUntilTheParentLocksAgain() {
+    public void quotaLockStaysOffTheParentPanelAndReturnsWhenTheParentLeaves() {
+        // The daily allowance is spent, so the lock is armed for any window of the television.
         prefs.setUsedSeconds(Prefs.DEFAULT_LIMIT_MINUTES * 60L);
         assertTrue(prefs.isGuardActive());
-        AdminSession.grant();
+
+        window(SONY_SETTINGS);
+        assertTrue("时长用完后设置页先被时长锁屏挡住", activityStarted(LockActivity.class));
+        markBaseline();
+
+        // The parent reaches the panel through 家长管理, which grants a session but never spends the
+        // day's unlock, so the lock stays armed underneath the whole visit.
+        gateController = Robolectric.buildActivity(AdminAuthActivity.class)
+                .create().start().resume().visible().windowFocusChanged(true);
+        AdminAuthActivity gate = gateController.get();
+        assertNotNull(gate);
+        typePin(gate);
+        assertTrue("正确的密码必须建立家长会话", AdminSession.isActive());
+        assertFalse("通过家长验证进入面板不得送出一天的时长", prefs.isUnlockedToday());
+        gateController.pause().stop().destroy();
+        gateController = null;
+
+        panelController = Robolectric.buildActivity(MainActivity.class)
+                .create().start().resume().visible().windowFocusChanged(true);
+        ShadowLooper.idleMainLooper(1500, TimeUnit.MILLISECONDS);
+        assertTrue(MainActivity.isAuthorizedVisible());
+        markBaseline();
+
+        // The panel sits over the settings page while the quota is spent. Neither the page below
+        // nor an ordinary app may pull the lock over the parent who is already working here.
+        for (int round = 0; round < 8; round++) {
+            window(SONY_SETTINGS);
+            window("video.player");
+            ShadowLooper.idleMainLooper(500, TimeUnit.MILLISECONDS);
+        }
+        assertFalse("家长面板在屏时时长锁屏不得抢前台", activityStarted(LockActivity.class));
+        assertFalse("家长面板在屏时不得再次弹出验证页", activityStarted(AdminAuthActivity.class));
+
+        // Once the parent leaves, the very next window is locked again: the panel is not a pass.
+        panelController.pause().stop().destroy();
+        panelController = null;
         markBaseline();
 
         window("video.player");
-        ShadowLooper.idleMainLooper(500, TimeUnit.MILLISECONDS);
 
-        assertFalse("刚验证过的家长不能被时长锁屏挡住", activityStarted(LockActivity.class));
-
-        // The parent presses 33 (立即锁定): the panel signs the session out and the lock returns.
-        AdminSession.revoke();
-        window("video.player");
-
-        assertTrue("家长主动锁定后必须立即恢复锁屏", activityStarted(LockActivity.class));
+        assertTrue("家长离开面板后时长锁屏必须回来", activityStarted(LockActivity.class));
     }
 
     private void typePin(AdminAuthActivity gate) {

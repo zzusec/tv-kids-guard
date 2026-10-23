@@ -3,8 +3,10 @@ package com.family.tvguard;
 import android.os.SystemClock;
 
 /**
- * Parent authentication is short-lived and never survives process death or reboot. While it is
- * live the settings watcher stands down: the PIN is asked for once per session, never twice.
+ * Parent authentication is short-lived and never survives process death or reboot. A live session
+ * is not a pass for settings pages — every visit still costs a PIN — it only keeps the guard from
+ * fighting its own parent screens, and 维护授权 additionally lets the system confirm pages that the
+ * parent opened on purpose through without a second password.
  */
 final class AdminSession {
 
