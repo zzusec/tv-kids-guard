@@ -94,6 +94,9 @@ public class GuardService extends Service {
                 // Power key turns the screen off normally, even while locked. Flush the
                 // counter so a hard power cut cannot roll the day's usage back.
                 persist();
+                // Standby is not part of the desktop pass: whoever wakes the television should
+                // find the lock again rather than the screen the parent left it on.
+                DesktopPass.revoke();
             } else if (Intent.ACTION_SCREEN_ON.equals(action) && locked) {
                 // However the child blanked the screen, the lock must be the first thing back.
                 lockActivityVisible = false;
@@ -340,6 +343,15 @@ public class GuardService extends Service {
         if (MainActivity.isAuthorizedVisible()) {
             return;
         }
+        if (DesktopPass.isActive()) {
+            // The desktop pass is watched by the settings interceptor, which ends it as soon as a
+            // window outside the launcher appears. Without that watcher nothing could end the pass,
+            // so the lock takes the screen back instead of leaving the quota unenforced.
+            if (AppLockService.isConnected()) {
+                return;
+            }
+            DesktopPass.revoke();
+        }
         if (now - lastLockFocusElapsed < 800L) {
             return;
         }
@@ -347,11 +359,28 @@ public class GuardService extends Service {
         LockActivity.launch(this);
     }
 
+    /**
+     * Grants the 2.5.15 desktop pass for a parent who is stepping out of the console to the
+     * television's own desktop. Refused when the settings watcher is not connected: the pass is
+     * ended by the first non-desktop window it sees, and with no watcher there is nothing to see it.
+     *
+     * @return whether the lock stands down from the desktop
+     */
+    boolean grantDesktopPass() {
+        if (!AppLockService.isConnected()) {
+            return false;
+        }
+        DesktopPass.grant();
+        removeShield();
+        return true;
+    }
+
     private void exitLock() {
         locked = false;
         prefs.setLocked(false);
         lockActivityVisible = false;
         inputBuffer.setLength(0);
+        DesktopPass.revoke();
         lastTickElapsed = SystemClock.elapsedRealtime();
         lastTickUptime = SystemClock.uptimeMillis();
         removeShield();
@@ -611,6 +640,12 @@ public class GuardService extends Service {
     }
 
     private void showShield() {
+        if (DesktopPass.isActive()) {
+            // A black overlay over the launcher would defeat the point of the pass: the parent
+            // stepped out to a usable desktop, and the shield is what hides everything else.
+            removeShield();
+            return;
+        }
         if (!canOverlay()) {
             return;
         }

@@ -299,7 +299,8 @@ public class LockActivity extends Activity {
         super.onUserLeaveHint();
         handler.postDelayed(() -> {
             if (isLockActive() && !AdminSession.isMaintenanceActive()
-                    && !AdminAuthActivity.isVisible() && !MainActivity.isAuthorizedVisible()) {
+                    && !AdminAuthActivity.isVisible() && !MainActivity.isAuthorizedVisible()
+                    && !DesktopPass.isActive()) {
                 launch(this);
             }
         }, 300L);

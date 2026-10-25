@@ -433,7 +433,7 @@ public class MainActivity extends Activity {
             return;
         }
         switch (code) {
-            case "00": closePanel(); break;
+            case "00": closePanel(true); break;
             case "11": verifyAgain(this::promptNewPassword); break;
             case "12": promptDailyLimit(); break;
             case "13": checkUpdate(); break;
@@ -638,7 +638,7 @@ public class MainActivity extends Activity {
             return;
         }
         service.lockNow();
-        closePanel();
+        closePanel(false);
     }
 
     private void confirmRemoval() {
@@ -817,14 +817,28 @@ public class MainActivity extends Activity {
         offerReadyUpdate();
     }
 
-    private void closePanel() {
+    /**
+     * Leaves the console.
+     *
+     * @param toDesktop whether leaving means the television's own desktop, which is what backing out
+     *                  and {@code 00 关闭面板} mean; {@code 33 立即锁定} passes false because ending
+     *                  the viewing session on the lock screen is the whole point of that action.
+     */
+    private void closePanel(boolean toDesktop) {
         AdminSession.revoke();
         GuardService service = GuardService.get();
+        // Since 2.5.15 a parent who backs out of the console lands on the television's own desktop,
+        // and the desktop is not watching television: the pass keeps the lock from being pulled
+        // back over the launcher. It is granted only while the settings watcher can see the next
+        // window, because that watcher is what ends the pass — with no watcher the lock returns to
+        // the way 2.5.12 left it.
+        boolean steppedOutToDesktop = toDesktop && prefs.isGuardActive() && service != null
+                && service.grantDesktopPass();
         if (service != null) {
             service.setConsoleVisible(false);
             service.refreshProtection();
         }
-        if (prefs.isGuardActive()) {
+        if (prefs.isGuardActive() && !steppedOutToDesktop) {
             LockActivity.launch(this);
         } else {
             startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
@@ -839,6 +853,6 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        closePanel();
+        closePanel(true);
     }
 }
