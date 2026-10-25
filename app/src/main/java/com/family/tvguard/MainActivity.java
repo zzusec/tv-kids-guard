@@ -827,13 +827,13 @@ public class MainActivity extends Activity {
     private void closePanel(boolean toDesktop) {
         AdminSession.revoke();
         GuardService service = GuardService.get();
-        // Since 2.5.15 a parent who backs out of the console lands on the television's own desktop,
-        // and the desktop is not watching television: the pass keeps the lock from being pulled
-        // back over the launcher. It is granted only while the settings watcher can see the next
-        // window, because that watcher is what ends the pass — with no watcher the lock returns to
-        // the way 2.5.12 left it.
-        boolean steppedOutToDesktop = toDesktop && prefs.isGuardActive() && service != null
-                && service.grantDesktopPass();
+        // 2.5.17: a parent who authenticated and leaves the console starts the parent grace, which
+        // lasts until the television next stands by. The 2.5.15 exemption was one step wide - it
+        // covered the desktop, and the first other window spent it - so stepping out to the desktop
+        // and then opening anything else landed back on the password page, which is the loop the
+        // BRAVIA 4K 2015 reported. {@code 33 立即锁定} passes false: ending the viewing session
+        // spends the grace instead of starting one.
+        boolean steppedOutToDesktop = toDesktop && service != null && service.grantParentGrace();
         if (service != null) {
             service.setConsoleVisible(false);
             service.refreshProtection();

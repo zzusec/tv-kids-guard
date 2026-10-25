@@ -42,8 +42,6 @@ public class AppLockService extends AccessibilityService {
     private static final long SHORTCUT_WINDOW_MILLIS = 2000L;
     private static final long SETTINGS_RETRY_MILLIS = 1000L;
     private static final long SETTINGS_REFRESH_MILLIS = 30_000L;
-    /** The desktop handler rarely changes, so the HOME intent is not re-resolved every tick. */
-    private static final long HOME_REFRESH_MILLIS = 30_000L;
     private static volatile AppLockService instance;
     /** Settings, package installer and app-info surfaces that can switch the guard off. */
     private static final String[] KNOWN_TV_SETTINGS = {
@@ -64,8 +62,6 @@ public class AppLockService extends AccessibilityService {
 
     private long firstZeroElapsed;
     private String foregroundPackage = "";
-    private String homePackage = "";
-    private long nextHomeResolveElapsed;
     private Prefs prefs;
     private final Set<String> settingsPackages = new HashSet<>(Arrays.asList(KNOWN_TV_SETTINGS));
     private String lastUnrecognizedPackage = "";
@@ -165,49 +161,17 @@ public class AppLockService extends AccessibilityService {
         if (foregroundPackage.equals(getPackageName()) || foregroundPackage.equals(SYSTEM_UI)) {
             return;
         }
-        if (DesktopPass.isActive()) {
-            if (isHomePackage(foregroundPackage)) {
-                // 2.5.15: the parent backed out of the console to the television's own desktop.
-                // Sitting on the desktop is not watching television, and fighting the launcher for
-                // the foreground is what made the lock look like a password prompt that never left.
-                return;
-            }
-            // Any other window spends the pass, so the lock below comes straight back.
-            DesktopPass.revoke();
+        if (prefs.isParentGraceActive()) {
+            // 2.5.17: a parent entered the PIN and left the console. Until the television next stands
+            // by, neither the quota lock nor the settings gate may put a password page back on the
+            // screen - the page that kept coming back was read as the guard not working at all.
+            // The grace ends only at standby, which the timing service's own receiver watches.
+            return;
         }
         if (prefs.isGuardActive()) {
             LockActivity.launch(this);
         } else if (isSettingsPackage(foregroundPackage)) {
             AdminAuthActivity.launch(this);
-        }
-    }
-
-    /**
-     * The television's own desktop, resolved from the HOME intent rather than a guessed vendor
-     * package name, so a launcher called something else on another brand is still recognised.
-     */
-    private boolean isHomePackage(String pkg) {
-        if (pkg.isEmpty()) {
-            return false;
-        }
-        long now = SystemClock.elapsedRealtime();
-        if (!pkg.equals(homePackage) && (homePackage.isEmpty() || now >= nextHomeResolveElapsed)) {
-            nextHomeResolveElapsed = now + HOME_REFRESH_MILLIS;
-            homePackage = resolveHomePackage();
-        }
-        return pkg.equals(homePackage);
-    }
-
-    private String resolveHomePackage() {
-        try {
-            ResolveInfo home = getPackageManager().resolveActivity(
-                    new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0);
-            return home != null && home.activityInfo != null && home.activityInfo.packageName != null
-                    ? home.activityInfo.packageName : "";
-        } catch (RuntimeException e) {
-            // A launcher that cannot be resolved is a desktop nobody can prove: keep the lock.
-            Log.w(TAG, "Could not resolve the television desktop", e);
-            return homePackage;
         }
     }
 

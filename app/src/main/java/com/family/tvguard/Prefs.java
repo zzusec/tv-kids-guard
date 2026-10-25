@@ -2,6 +2,7 @@ package com.family.tvguard;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.os.SystemClock;
 
 import java.security.MessageDigest;
 import java.text.SimpleDateFormat;
@@ -27,6 +28,13 @@ final class Prefs {
     private static final String KEY_FAIL_COUNT = "fail_count";
     private static final String KEY_LOCKOUT_UNTIL = "lockout_until";
     private static final String KEY_PROTECTION_ENABLED = "protection_enabled";
+    /**
+     * The 2.5.17 parent grace: when a parent left the console after a correct PIN, and whether the
+     * password page was on screen at that moment. Both live in storage rather than in the service
+     * because Android recycles this process on the television and the grace has to outlast that.
+     */
+    private static final String KEY_GRACE_SINCE = "parent_grace_since";
+    private static final String KEY_GRACE_FROM_LOCK = "parent_grace_from_lock";
 
     enum AuthResult { SUCCESS, INCORRECT, COOLDOWN, INVALID }
 
@@ -99,6 +107,8 @@ final class Prefs {
                     .putBoolean(KEY_LOCKED, false)
                     .putInt(KEY_FAIL_COUNT, 0)
                     .putLong(KEY_LOCKOUT_UNTIL, 0L)
+                    .remove(KEY_GRACE_SINCE)
+                    .remove(KEY_GRACE_FROM_LOCK)
                     .apply();
             return true;
         }
@@ -273,11 +283,56 @@ final class Prefs {
     }
 
     /**
+     * Starts the parent grace: a parent has entered the correct PIN and is handing the remote back
+     * to the television, so no password page may be put on the screen again until it next stands by.
+     * The grace buys no allowance — the daily limit, today's bonus and the watched seconds are
+     * untouched, and watching during it keeps counting.
+     *
+     * @param fromLock whether the quota lock was up when the parent authenticated. Only that case
+     *                 defers the lock; a grace taken on a day that still has allowance left must not
+     *                 postpone the lock the child has not reached yet, which would be the 今天不限时
+     *                 that 2.5.12 removed under another name.
+     */
+    void startParentGrace(boolean fromLock) {
+        sp.edit()
+                .putLong(KEY_GRACE_SINCE, SystemClock.elapsedRealtime())
+                .putBoolean(KEY_GRACE_FROM_LOCK, fromLock)
+                .commit();
+    }
+
+    void endParentGrace() {
+        sp.edit().remove(KEY_GRACE_SINCE).remove(KEY_GRACE_FROM_LOCK).apply();
+    }
+
+    /** Whether a parent is still inside the grace they bought with the PIN, ended by any standby. */
+    boolean isParentGraceActive() {
+        long since = sp.getLong(KEY_GRACE_SINCE, 0L);
+        if (since <= 0L) {
+            return false;
+        }
+        if (SystemClock.elapsedRealtime() < since) {
+            // The boot clock went backwards, so the television was powered off rather than left
+            // running. A power cycle counts as the standby that ends the grace, otherwise pulling
+            // the plug would be the way to keep a parent's exemption alive forever.
+            endParentGrace();
+            return false;
+        }
+        return true;
+    }
+
+    /** Whether the live parent grace also holds the quota lock off, not just the settings gate. */
+    boolean isParentGraceDeferringLock() {
+        return isParentGraceActive() && sp.getBoolean(KEY_GRACE_FROM_LOCK, false);
+    }
+
+    /**
      * Whether the guard must be holding the screen right now, computed from persisted state
      * alone. The accessibility service uses this so a recycled service process cannot open a
-     * window in which the lock is forgotten.
+     * window in which the lock is forgotten. A parent grace that came off the lock answers no:
+     * the lock is deferred, not forgiven, and returns at the next standby.
      */
     boolean isGuardActive() {
-        return isProtectionEnabled() && (isLocked() || remainingSeconds() <= 0L);
+        return isProtectionEnabled() && !isParentGraceDeferringLock()
+                && (isLocked() || remainingSeconds() <= 0L);
     }
 }

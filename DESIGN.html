@@ -83,11 +83,12 @@ components:
   <li>2.5.13 起输入页不再有任何模式切换按钮：早期版本的「使用屏幕数字盘」「使用遥控器数字键」原生按钮、其焦点位与 <code>show_keypad</code>/<code>pad_pinned</code> 存储全部删除，页面只剩硬件判定出来的那一种输入方式。2.5.14 起唯一新增的控件是那枚图标本身，它不是模式开关：不改变判定，只在判定不出来时提供进入数字盘的一步。</li>
   <li>Gate 与 <code>PinDialog</code> 默认聚焦输入区：数字键已确认时直接按遥控器数字键输入；未确认时从输入区按方向下或右选中数字键盘图标，OK 展开数字盘并聚焦第一个数字，从盘顶部按方向上回到输入区（图标已收起）；锁屏把上方的焦点目标设成「家长管理」按钮。</li>
   <li>实体数字键直接输入的路径保留，输入后左键删除、OK 直接确认；数字盘显示时左键是焦点导航，不与删除混用。返回取消当前输入。6 位家长 PIN 始终遮罩，失败冷却和授权检查不变；时长显示数字，不把时长也遮罩。</li>
-  <li>Lock 默认聚焦「家长管理」按钮，OK 进入家长验证；从该按钮出发，数字键未确认时方向下或右选中数字键盘图标、OK 展开数字盘，已确认时屏幕上没有数字盘也没有图标，直接按遥控器数字键即可。输入家长密码并确认只打开家长管理面板，锁屏仍在面板之下，离开面板即恢复；选中图标、展开数字盘或返回取消输入均不解除锁定，进入面板也不送出一天的时长。提示文字相应说明「输入 6 位家长密码进入家长面板」，不写「解除限时」。</li>
+  <li>Lock 默认聚焦「家长管理」按钮，OK 进入家长验证；从该按钮出发，数字键未确认时方向下或右选中数字键盘图标、OK 展开数字盘，已确认时屏幕上没有数字盘也没有图标，直接按遥控器数字键即可。输入家长密码并确认只打开家长管理面板，锁屏仍在面板之下，2.5.17 起家长从面板退出换来的是到下一次待机为止的宽限而不是当天的免限时；选中图标、展开数字盘或返回取消输入均不解除锁定，进入面板也不送出一天的时长。提示文字相应说明「输入 6 位家长密码进入家长面板」，不写「解除限时」。</li>
   <li>数字盘被禁用时（失败冷却、服务正在恢复）图标一起隐藏，焦点路径回到禁用前的入口，不出现「能选中但不能用」的控件；恢复可用后图标随数字盘一起回来。</li>
   <li>语义必须区分：<code>00 关闭面板</code> 不停防护；<code>22 临时加时长</code> 只加今天；<code>44 关闭防护</code> 保留设置且确认后执行；<code>55 开启防卸载</code> 打开系统确认页启用设备管理员；<code>99 启用防护</code> 恢复管控。<code>55</code> 与 <code>99</code> 互斥，共用最后一格，面板保持四行以适配 1080p 电视。</li>
-  <li>2.5.15 起面板的两条退路（返回键与 <code>00 关闭面板</code>）把遥控器交给电视机自己的桌面：桌面这一屏不弹锁屏、不盖黑屏，<code>33 立即锁定</code> 与验证页返回仍回到锁屏。这份豁免由无障碍设置拦截观察前台窗口，桌面无豁免时照常锁定；离开桌面、待机或拦截服务断开即刻失效，锁屏与黑屏一起恢复。</li>
+  <li>面板的两条退路（返回键与 <code>00 关闭面板</code>）把遥控器交给电视机自己的桌面，<code>33 立即锁定</code> 与验证页返回仍回到锁屏。2.5.15 的那一步式桌面豁免（<code>DesktopPass</code>）已在 2.5.17 删除：它只宽到桌面之外的第一个窗口，家长换个 APP 就又被要求输入密码。</li>
   <li>2.5.16 起「屏幕亮着」由 <code>PanelState</code> 统一回答：电源管理与显示子系统两个判据同时成立才算，面板熄灭、doze、屏保期间既不计时也不弹锁屏。锁屏窗口不再持有 <code>FLAG_KEEP_SCREEN_ON</code>——它只保留 <code>TURN_SCREEN_ON</code>，所以家长按下关机后电视能真的进入待机，而不是被管控钉在亮屏状态；唤醒路径是 <code>ACTION_SCREEN_ON</code> 重新主张锁屏，黑幕在此之前一直盖住桌面。<code>LockActivity.launch()</code> 在面板不亮时直接返回，避免一个带 <code>TURN_SCREEN_ON</code> 的重启把刚关掉的电视又点亮。</li>
+  <li>2.5.17 起家长退出后台后的免打扰由 <code>Prefs</code> 的 <code>parent_grace_since</code> / <code>parent_grace_from_lock</code> 两项存储承担（<code>Prefs.isParentGraceActive()</code>），写在 <code>tvguard_prefs</code> 而不是内存，管控进程被回收重启也不丢。判定只有一处：<code>AppLockService.enforceForeground()</code> 在宽限期内直接返回，既不 <code>LockActivity.launch()</code> 也不 <code>AdminAuthActivity.launch()</code>；<code>GuardService</code> 侧由 <code>lockRequired()</code> 与 <code>showShield()</code> 共同尊重 <code>isParentGraceDeferringLock()</code>，宽限在锁屏上发出时先 <code>exitLock()</code> 再放行。宽限的结束不靠超时，只有四个事件：<code>ACTION_SCREEN_OFF</code>、<code>33 立即锁定</code>（<code>lockNow()</code> 先 <code>endParentGrace()</code>）、跨新一天（<code>rollOverIfNeeded()</code>）、开机后 <code>elapsedRealtime</code> 反而小于授予时刻（断电重开）。宽限期不停表：面板亮着的分钟照常计入今天已看，<code>isGuardActive()</code> 只在「宽限从锁屏发出」时才推迟锁屏，以免变成 2.5.12 删掉的「今天不限时」。</li>
 </ul>
 <h2>Do's and Don'ts</h2>
 <ul>

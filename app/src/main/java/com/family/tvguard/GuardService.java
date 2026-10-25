@@ -94,9 +94,10 @@ public class GuardService extends Service {
                 // Power key turns the screen off normally, even while locked. Flush the
                 // counter so a hard power cut cannot roll the day's usage back.
                 persist();
-                // Standby is not part of the desktop pass: whoever wakes the television should
-                // find the lock again rather than the screen the parent left it on.
-                DesktopPass.revoke();
+                // Standby is not part of the parent grace: whoever wakes the television should find
+                // the lock again rather than the screen the parent left it on. This is the one
+                // boundary of the grace, so the family ending a viewing session is a power key away.
+                prefs.endParentGrace();
             } else if (Intent.ACTION_SCREEN_ON.equals(action) && locked) {
                 // However the child blanked the screen, the lock must be the first thing back.
                 lockActivityVisible = false;
@@ -163,12 +164,23 @@ public class GuardService extends Service {
         WatchdogReceiver.schedule(this);
         handler.post(ticker);
         // The locked flag is persisted, so a service restart while locked re-asserts the screen
-        // even if the clock or the quota would otherwise say the day is still open.
-        if (prefs.isLocked() || isQuotaExhausted()) {
+        // even if the clock or the quota would otherwise say the day is still open. A parent grace
+        // restored from storage holds that back until the television stands by.
+        if (lockRequired()) {
             enterLock();
         } else {
             showCountdown();
         }
+    }
+
+    /**
+     * Whether the quota lock has to be on screen: the day's allowance is spent, or the lock was
+     * already recorded as up. The parent grace is the one thing that can answer no while the
+     * allowance is spent, because a parent standing in front of the television is what the PIN
+     * proves, and the grace runs until the next standby.
+     */
+    private boolean lockRequired() {
+        return !prefs.isParentGraceDeferringLock() && (prefs.isLocked() || isQuotaExhausted());
     }
 
     @Override
@@ -179,7 +191,7 @@ public class GuardService extends Service {
         }
         // Restart promptly if Android kills the process; the lock must not depend on the
         // service staying alive by luck.
-        if (prefs != null && (prefs.isLocked() || isQuotaExhausted()) && !locked) {
+        if (prefs != null && lockRequired() && !locked) {
             enterLock();
         }
         // START_STICKY plus a foreground notification keeps the counter and the lock watchdog
@@ -256,7 +268,7 @@ public class GuardService extends Service {
         }
 
         long remaining = remainingMillis();
-        if (isQuotaExhausted() && !locked) {
+        if (lockRequired() && !locked) {
             enterLock();
         }
 
@@ -349,14 +361,11 @@ public class GuardService extends Service {
         if (MainActivity.isAuthorizedVisible()) {
             return;
         }
-        if (DesktopPass.isActive()) {
-            // The desktop pass is watched by the settings interceptor, which ends it as soon as a
-            // window outside the launcher appears. Without that watcher nothing could end the pass,
-            // so the lock takes the screen back instead of leaving the quota unenforced.
-            if (AppLockService.isConnected()) {
-                return;
-            }
-            DesktopPass.revoke();
+        if (prefs.isParentGraceDeferringLock()) {
+            // A parent entered the PIN and stepped out of the console. Until the television stands by
+            // the lock waits instead of chasing whatever window the parent opened: chasing it was the
+            // password prompt that never went away (BRAVIA 4K 2015, 2.5.16 and earlier).
+            return;
         }
         if (now - lastLockFocusElapsed < 800L) {
             return;
@@ -366,18 +375,25 @@ public class GuardService extends Service {
     }
 
     /**
-     * Grants the 2.5.15 desktop pass for a parent who is stepping out of the console to the
-     * television's own desktop. Refused when the settings watcher is not connected: the pass is
-     * ended by the first non-desktop window it sees, and with no watcher there is nothing to see it.
+     * Starts the 2.5.17 parent grace for a parent who authenticated and is leaving the console. The
+     * grace is not a quota: nothing here changes the daily limit, today's bonus or the watched
+     * seconds, and because the lock is stood down rather than hidden, whatever the family watches
+     * during it keeps counting into 今日已看.
      *
-     * @return whether the lock stands down from the desktop
+     * @return whether the guard stands down from the lock
      */
-    boolean grantDesktopPass() {
-        if (!AppLockService.isConnected()) {
-            return false;
+    boolean grantParentGrace() {
+        // The lock being up is what makes the grace defer it. On a day that still has allowance the
+        // grace only stops the settings gate asking again, so a morning errand cannot postpone an
+        // evening lock that has not happened yet.
+        boolean fromLock = locked || prefs.isLocked();
+        prefs.startParentGrace(fromLock);
+        if (fromLock) {
+            // Clears the lock flag and the shield, and brings the corner back showing what is left.
+            exitLock();
+        } else {
+            removeShield();
         }
-        DesktopPass.grant();
-        removeShield();
         return true;
     }
 
@@ -386,7 +402,6 @@ public class GuardService extends Service {
         prefs.setLocked(false);
         lockActivityVisible = false;
         inputBuffer.setLength(0);
-        DesktopPass.revoke();
         lastTickElapsed = SystemClock.elapsedRealtime();
         lastTickUptime = SystemClock.uptimeMillis();
         removeShield();
@@ -472,6 +487,9 @@ public class GuardService extends Service {
         if (!AdminSession.isActive()) {
             return;
         }
+        // 33 立即锁定 is the parent ending this viewing session, so it also spends the grace the
+        // same PIN bought: the lock has to come back now, not at the next standby.
+        prefs.endParentGrace();
         if (!locked) {
             enterLock();
         }
@@ -646,9 +664,9 @@ public class GuardService extends Service {
     }
 
     private void showShield() {
-        if (DesktopPass.isActive()) {
-            // A black overlay over the launcher would defeat the point of the pass: the parent
-            // stepped out to a usable desktop, and the shield is what hides everything else.
+        if (prefs.isParentGraceDeferringLock()) {
+            // A black overlay over whatever the parent opened would defeat the grace: the shield is
+            // what hides the screen, so it has to go up only when the lock is allowed back.
             removeShield();
             return;
         }

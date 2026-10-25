@@ -304,7 +304,7 @@ public class LockActivity extends Activity {
         handler.postDelayed(() -> {
             if (isLockActive() && !AdminSession.isMaintenanceActive()
                     && !AdminAuthActivity.isVisible() && !MainActivity.isAuthorizedVisible()
-                    && !DesktopPass.isActive()) {
+                    && !prefs.isParentGraceDeferringLock()) {
                 launch(this);
             }
         }, 300L);
