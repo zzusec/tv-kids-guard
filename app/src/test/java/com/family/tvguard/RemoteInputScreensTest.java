@@ -31,7 +31,8 @@ import java.util.List;
 import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = {19, 24, 33}, qualifiers = "w960dp-h540dp-land-mdpi")
+@Config(sdk = {19, 24, 33}, qualifiers = "w960dp-h540dp-land-mdpi",
+        shadows = RemoteInputModeTest.DigitInputDevice.class)
 @LooperMode(LooperMode.Mode.PAUSED)
 public class RemoteInputScreensTest {
     private Context context;
@@ -44,11 +45,13 @@ public class RemoteInputScreensTest {
     public void setUp() {
         context = RuntimeEnvironment.getApplication();
         context.getSharedPreferences("tvguard_prefs", 0).edit().clear().commit();
-        context.getSharedPreferences("tvguard_remote", 0).edit().clear()
-                .putBoolean("show_keypad", false).commit();
+        context.getSharedPreferences("tvguard_remote", 0).edit().clear().commit();
         prefs = new Prefs(context);
         prefs.setPassword("135790");
         AdminSession.revoke();
+        // These screens are written for a remote that can type digits, so the hardware answer has
+        // to say so: since 2.5.13 nothing else decides whether the pad appears.
+        withDigitRemote();
     }
 
     @After
@@ -57,6 +60,7 @@ public class RemoteInputScreensTest {
         if (controller != null) controller.pause().stop().destroy();
         if (service != null) service.destroy();
         context.getSharedPreferences("tvguard_remote", 0).edit().clear().commit();
+        RemoteInputModeTest.DigitInputDevice.reset();
         AdminSession.revoke();
     }
 
@@ -64,6 +68,8 @@ public class RemoteInputScreensTest {
     public void physicalGateHasNoNumberGridAndKeepsMaskedDirectEntry() {
         AdminAuthActivity activity = startGate();
         assertEquals(View.GONE, activity.findViewById(R.id.keypad_column).getVisibility());
+        assertNull("2.5.13 removed the manual input switch",
+                activity.getWindow().getDecorView().findViewWithTag("keypad_toggle"));
         assertFalse(activity.findViewById(android.R.id.content).findViewWithTag("key_1").isShown());
         press(activity.getWindow(), KeyEvent.KEYCODE_1);
         press(activity.getWindow(), KeyEvent.KEYCODE_3);
@@ -75,38 +81,42 @@ public class RemoteInputScreensTest {
     }
 
     @Test
-    public void numberlessRemoteCanRecoverFromAMisreportedPhysicalModeBeforeAuthentication() {
+    public void aRemoteWithoutNumberKeysGetsThePadWithoutAnySwitch() {
+        RemoteInputModeTest.DigitInputDevice.reset();
         AdminAuthActivity activity = startGate();
-        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_DOWN);
-        assertEquals("keypad_toggle", activity.getWindow().getDecorView().findFocus().getTag());
-        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_CENTER);
-        assertTrue(activity.findViewById(android.R.id.content).findViewWithTag("key_1").isShown());
-        assertEquals("key_1", activity.getWindow().getDecorView().findFocus().getTag());
-        assertFalse(AdminSession.isActive());
-        assertEquals(0, prefs.getFailCount());
-        assertTrue(prefs.checkPassword("135790"));
-        assertEquals(Prefs.DEFAULT_LIMIT_MINUTES, prefs.getDailyLimitMinutes());
+        View root = activity.getWindow().getDecorView();
+        assertNull(root.findViewWithTag("keypad_toggle"));
+        assertEquals(View.VISIBLE, activity.findViewById(R.id.keypad_column).getVisibility());
+        assertEquals("key_1", root.findFocus().getTag());
         ScreenRemote.digits(activity, "135790");
-        assertTrue(AdminSession.isActive());
+        assertTrue("The pad alone must be enough to authorize a parent", AdminSession.isActive());
+        assertTrue(activity.isFinishing());
     }
 
     @Test
-    public void lockModeToggleNeitherUnlocksNorGrantsParentAuthorization() {
+    public void aRemotePairedAfterTheScreenOpenedHidesThePadOnTheNextResume() {
+        RemoteInputModeTest.DigitInputDevice.reset();
+        AdminAuthActivity activity = startGate();
+        assertEquals(View.VISIBLE, activity.findViewById(R.id.keypad_column).getVisibility());
+        withDigitRemote();
+        controller.pause().resume();
+        ShadowLooper.idleMainLooper();
+        assertEquals(View.GONE, activity.findViewById(R.id.keypad_column).getVisibility());
+        assertFalse(AdminSession.isActive());
+    }
+
+    @Test
+    public void padEntryOnTheLockScreenNeitherBuysTimeNorRelinquishesTheLock() {
         prefs.setUsedSeconds(1800L);
         prefs.setLocked(true);
+        RemoteInputModeTest.DigitInputDevice.reset();
         service = Robolectric.buildService(GuardService.class).create();
         controller = Robolectric.buildActivity(LockActivity.class).setup().visible()
                 .windowFocusChanged(true);
         ShadowLooper.idleMainLooper();
         Activity activity = controller.get();
-        assertFalse(activity.getWindow().getDecorView().findViewWithTag("key_1").isShown());
-        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_RIGHT);
-        assertEquals("keypad_toggle", activity.getWindow().getDecorView().findFocus().getTag());
-        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_CENTER);
+        assertNull(activity.getWindow().getDecorView().findViewWithTag("keypad_toggle"));
         assertTrue(activity.getWindow().getDecorView().findViewWithTag("key_1").isShown());
-        assertTrue(service.get().isLocked());
-        assertFalse(AdminSession.isActive());
-        assertEquals(1800L, prefs.getUsedSeconds());
         // The PIN proves a parent is present: it authorizes the panel, it never buys viewing time.
         ScreenRemote.digits(activity, "135790");
         assertTrue(AdminSession.isActive());
@@ -127,12 +137,11 @@ public class RemoteInputScreensTest {
     }
 
     @Test
-    public void dialogChoiceSurvivesReopenAndAnAlreadyCreatedGateRefreshesIt() {
+    public void thePadStaysUpAcrossReopenWhileTheRemoteStillHasNoNumberKeys() {
+        RemoteInputModeTest.DigitInputDevice.reset();
         AdminAuthActivity activity = startGate();
         List<String> values = new ArrayList<>();
         showDialog(values);
-        press(dialog.getWindow(), KeyEvent.KEYCODE_DPAD_DOWN);
-        press(dialog.getWindow(), KeyEvent.KEYCODE_DPAD_CENTER);
         assertTrue(dialog.getWindow().getDecorView().findViewWithTag("key_1").isShown());
         dialog.dismiss();
         showDialog(values);
@@ -143,6 +152,12 @@ public class RemoteInputScreensTest {
         assertTrue(activity.getWindow().getDecorView().findViewWithTag("key_1").isShown());
         assertFalse(AdminSession.isActive());
         assertTrue(values.isEmpty());
+    }
+
+    private void withDigitRemote() {
+        RemoteInputModeTest.DigitInputDevice.reset();
+        RemoteInputModeTest.DigitInputDevice.add(false, android.view.InputDevice.SOURCE_KEYBOARD,
+                RemoteInputModeTest.digits(KeyEvent.KEYCODE_0, 0, 10));
     }
 
     private AdminAuthActivity startGate() {

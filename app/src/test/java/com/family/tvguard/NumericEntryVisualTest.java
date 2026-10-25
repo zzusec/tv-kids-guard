@@ -5,6 +5,7 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Rect;
+import android.view.KeyEvent;
 import android.view.View;
 
 import org.junit.After;
@@ -27,11 +28,13 @@ import java.io.FileOutputStream;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /** Native previews and geometry checks, not a substitute for testing a Xiaomi TV. */
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = 33, qualifiers = "w960dp-h540dp-land-mdpi")
+@Config(sdk = 33, qualifiers = "w960dp-h540dp-land-mdpi",
+        shadows = RemoteInputModeTest.DigitInputDevice.class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @LooperMode(LooperMode.Mode.PAUSED)
 public class NumericEntryVisualTest {
@@ -39,10 +42,15 @@ public class NumericEntryVisualTest {
     private ActivityController<? extends Activity> controller;
     private PinDialog dialog;
     private ServiceController<GuardService> service;
+    private boolean physicalRemote;
 
     @Before
     public void setUp() {
         context = RuntimeEnvironment.getApplication();
+        // The pad is decided by the attached hardware alone now, so this class owns that state
+        // explicitly instead of trusting another test class to have cleaned up.
+        RemoteInputModeTest.DigitInputDevice.reset();
+        physicalRemote = false;
         context.getSharedPreferences("tvguard_prefs", Context.MODE_PRIVATE).edit().clear().commit();
         context.getSharedPreferences("tvguard_remote", Context.MODE_PRIVATE).edit().clear().commit();
         new Prefs(context).setPassword("135790");
@@ -70,15 +78,22 @@ public class NumericEntryVisualTest {
 
     @Test
     public void physicalRemoteSurfacesHideTheGridAndRemainCompact() throws Exception {
-        context.getSharedPreferences("tvguard_remote", 0).edit().putBoolean("show_keypad", false).commit();
+        withPhysicalDigits();
         captureSurfaces("physical-960x540");
     }
 
     @Test
     @Config(qualifiers = "w640dp-h360dp-land-mdpi")
     public void physicalRemoteSurfacesFitAShortTvViewport() throws Exception {
-        context.getSharedPreferences("tvguard_remote", 0).edit().putBoolean("show_keypad", false).commit();
+        withPhysicalDigits();
         captureSurfaces("physical-640x360");
+    }
+
+    /** A remote whose key map really covers 0-9: the pad must never be drawn for it. */
+    private void withPhysicalDigits() {
+        physicalRemote = true;
+        RemoteInputModeTest.DigitInputDevice.add(false, android.view.InputDevice.SOURCE_KEYBOARD,
+                RemoteInputModeTest.digits(KeyEvent.KEYCODE_0, 0, 10));
     }
 
     private void captureSurfaces(String size) throws Exception {
@@ -124,11 +139,14 @@ public class NumericEntryVisualTest {
     }
 
     private void assertInputControls(View root) {
-        assertFullyVisible(root.findViewWithTag("keypad_toggle"));
-        if (context.getSharedPreferences("tvguard_remote", 0).getBoolean("show_keypad", true)) {
-            assertPadVisible(root);
-        } else {
+        assertNull("2.5.13 removed the manual input switch",
+                root.findViewWithTag("keypad_toggle"));
+        if (physicalRemote) {
             assertEquals(View.GONE, root.findViewWithTag("numeric_keypad").getVisibility());
+        } else {
+            assertEquals("A remote that cannot report 0-9 must be given the pad", View.VISIBLE,
+                    root.findViewWithTag("numeric_keypad").getVisibility());
+            assertPadVisible(root);
         }
     }
 

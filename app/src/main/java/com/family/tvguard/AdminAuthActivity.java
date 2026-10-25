@@ -87,11 +87,6 @@ public class AdminAuthActivity extends Activity {
         });
         ((FrameLayout) findViewById(R.id.keypad_host)).addView(keypad);
         inputMode = new RemoteInputMode(this, masked, keypad, this::configureInputLayout);
-        LinearLayout.LayoutParams toggle = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, Math.round(48 * getResources()
-                .getDisplayMetrics().density));
-        toggle.topMargin = Math.round(12 * getResources().getDisplayMetrics().density);
-        ((LinearLayout) findViewById(R.id.entry_copy)).addView(inputMode.toggle(), toggle);
         configureInputLayout();
         inputMode.focusEntry();
         render();
@@ -192,7 +187,7 @@ public class AdminAuthActivity extends Activity {
                 || code == KeyEvent.KEYCODE_TV_POWER) {
             return super.dispatchKeyEvent(event);
         }
-        if (inputMode.handleKeyEvent(event) || keypad.handleKeyEvent(event)) {
+        if (keypad.handleKeyEvent(event)) {
             render();
             return true;
         }

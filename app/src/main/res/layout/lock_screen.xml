@@ -107,7 +107,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="12dp"
                         android:gravity="center"
-                        android:text="方向下 / 右进入数字盘\n输入密码进入家长面板"
+                        android:text="方向键选数字 · OK 输入\n输入密码进入家长面板"
                         android:textColor="@color/on_dark_mute" />
 
                     <FrameLayout

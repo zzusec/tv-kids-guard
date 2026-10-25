@@ -189,59 +189,33 @@ public class RemoteInputModeTest {
     }
 
     @Test
-    public void explicitBooleanPreferenceOverridesEitherHardwareDefault() {
+    public void anOldBuildSPadPreferenceNoLongerForcesThePad() {
         DigitInputDevice.add(false, InputDevice.SOURCE_DPAD,
                 digits(KeyEvent.KEYCODE_0, 0, 10));
-        assertTrue(remotePrefs.edit().putBoolean("show_keypad", true).commit());
-        createControl();
-        assertMode(true);
-
-        DigitInputDevice.reset();
-        assertTrue(remotePrefs.edit().putBoolean("show_keypad", false).commit());
+        assertTrue(remotePrefs.edit().putBoolean("show_keypad", true)
+                .putBoolean("pad_pinned", true).commit());
         createControl();
         assertMode(false);
+        assertFalse("The removed switch must not leave a stored choice behind",
+                remotePrefs.contains("show_keypad"));
+        assertFalse(remotePrefs.contains("pad_pinned"));
     }
 
     @Test
-    public void dpadCanHideAndReopenThePadAndPersistTheChoiceAcrossControls() {
-        createControl();
-        assertEquals("key_1", focusedTag());
-        press(KeyEvent.KEYCODE_DPAD_UP);
-        assertEquals("keypad_toggle", focusedTag());
-        press(KeyEvent.KEYCODE_DPAD_CENTER);
-        assertMode(false);
-        assertTrue(primary.hasFocus());
-        assertEquals(1, changes);
-        assertFalse(remotePrefs.getBoolean("show_keypad", true));
-
-        createControl();
-        assertMode(false);
-        assertTrue(primary.hasFocus());
-        press(KeyEvent.KEYCODE_DPAD_DOWN);
-        assertEquals("keypad_toggle", focusedTag());
-        press(KeyEvent.KEYCODE_DPAD_CENTER);
-        assertMode(true);
-        assertEquals("key_1", focusedTag());
-        assertTrue(remotePrefs.getBoolean("show_keypad", false));
-        createControl();
-        assertMode(true);
-        assertEquals("key_1", focusedTag());
-    }
-
-    @Test
-    public void falsePositiveHardwareCanBeOverriddenWithoutAnyNumberKey() {
+    public void nothingOnTheRemoteReopensThePadOnceTheHardwareHasDigits() {
         DigitInputDevice.add(false, InputDevice.SOURCE_DPAD,
                 digits(KeyEvent.KEYCODE_0, 0, 10));
         createControl();
         assertMode(false);
-        press(KeyEvent.KEYCODE_DPAD_RIGHT);
-        assertEquals("keypad_toggle", focusedTag());
-        press(KeyEvent.KEYCODE_DPAD_CENTER);
-        assertMode(true);
-        assertEquals("key_1", focusedTag());
+        for (int code : new int[] {KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT}) {
+            press(code);
+            press(code);
+        }
+        assertMode(false);
+        assertEquals(0, changes);
         assertEquals(0, padActions);
-        createControl();
-        assertMode(true);
+        assertNull("The 2.5.12 switch button is gone", findToggle());
     }
 
     @Test
@@ -264,51 +238,6 @@ public class RemoteInputModeTest {
     }
 
     @Test
-    public void aPinnedPadSurvivesTheDigitsTheRemoteReallyTypes() {
-        DigitInputDevice remote = DigitInputDevice.add(false, InputDevice.SOURCE_KEYBOARD,
-                digits(KeyEvent.KEYCODE_0, 0, 10));
-        createControl();
-        assertMode(false);
-        press(KeyEvent.KEYCODE_DPAD_DOWN);
-        assertEquals("keypad_toggle", focusedTag());
-        press(KeyEvent.KEYCODE_DPAD_CENTER);
-        assertMode(true);
-        assertEquals(1, changes);
-        assertTrue(remotePrefs.getBoolean("pad_pinned", false));
-
-        physicalDigit(remote.id, KeyEvent.KEYCODE_3);
-        assertMode(true);
-        assertEquals("A pinned pad must not fire the change callback again", 1, changes);
-        assertTrue(remotePrefs.getBoolean("physical_digits_seen", false));
-
-        createControl();
-        assertMode(true);
-        assertEquals("key_1", focusedTag());
-    }
-
-    @Test
-    public void aPadChosenWhileNothingWasKnownYieldsToTheFirstRealDigit() {
-        createControl();
-        assertMode(true);
-        press(KeyEvent.KEYCODE_DPAD_UP);
-        assertEquals("keypad_toggle", focusedTag());
-        press(KeyEvent.KEYCODE_DPAD_CENTER);
-        assertMode(false);
-        press(KeyEvent.KEYCODE_DPAD_DOWN);
-        press(KeyEvent.KEYCODE_DPAD_CENTER);
-        assertMode(true);
-        assertFalse("Reopening the pad on unknown hardware is not an override",
-                remotePrefs.getBoolean("pad_pinned", false));
-
-        DigitInputDevice remote = DigitInputDevice.add(false, InputDevice.SOURCE_DPAD,
-                digits(KeyEvent.KEYCODE_0, 0, 10));
-        physicalDigit(remote.id, KeyEvent.KEYCODE_5);
-        assertMode(false);
-        assertEquals(3, changes);
-        assertTrue(remotePrefs.getBoolean("physical_digits_seen", false));
-    }
-
-    @Test
     public void syntheticAndVirtualDigitsTeachNothing() {
         createControl();
         assertMode(true);
@@ -325,7 +254,6 @@ public class RemoteInputModeTest {
         assertEquals(0, changes);
         assertFalse("A virtual device proves nothing about the remote",
                 remotePrefs.contains("physical_digits_seen"));
-        assertFalse(remotePrefs.contains("pad_pinned"));
     }
 
     @Test
@@ -348,27 +276,7 @@ public class RemoteInputModeTest {
     }
 
     @Test
-    public void toggleActivatesOnceOnReleaseAndCanceledPressDoesNotPersist() {
-        createControl();
-        press(KeyEvent.KEYCODE_DPAD_UP);
-        send(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_CENTER, 0, 0);
-        assertMode(true);
-        send(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_CENTER, 3, 0);
-        send(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_CENTER, 0, KeyEvent.FLAG_CANCELED);
-        assertMode(true);
-        assertEquals(0, changes);
-        assertFalse(remotePrefs.contains("show_keypad"));
-        press(KeyEvent.KEYCODE_DPAD_CENTER);
-        assertMode(false);
-        assertEquals(1, changes);
-        send(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_CENTER, 0, 0);
-        assertMode(false);
-        assertEquals(1, changes);
-        assertEquals(0, padActions);
-    }
-
-    @Test
-    public void switchingModeLeavesInputGuardSettingsAndAuthorizationUntouched() {
+    public void navigatingThePadLeavesInputGuardSettingsAndAuthorizationUntouched() {
         Prefs prefs = new Prefs(context);
         prefs.setPassword("135790");
         prefs.setDailyLimitMinutes(45);
@@ -377,15 +285,21 @@ public class RemoteInputModeTest {
                 .getSharedPreferences("tvguard_prefs", Context.MODE_PRIVATE).getAll());
         assertFalse(AdminSession.isActive());
         createControl();
-        press(KeyEvent.KEYCODE_DPAD_UP);
+        assertMode(true);
+        assertTrue("The pad keeps navigation keys while it is up",
+                send(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_UP, 0, 0));
+        send(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_UP, 0, 0);
+        assertEquals("key_1", focusedTag());
+        press(KeyEvent.KEYCODE_DPAD_DOWN);
+        assertEquals("key_4", focusedTag());
         press(KeyEvent.KEYCODE_DPAD_CENTER);
-        press(KeyEvent.KEYCODE_DPAD_RIGHT);
-        press(KeyEvent.KEYCODE_DPAD_CENTER);
+        assertMode(true);
+        assertEquals(0, changes);
+        assertEquals("one pad key press reaches the screen", 1, padActions);
         assertEquals("1234", primary.getText().toString());
         assertEquals(before, context.getSharedPreferences("tvguard_prefs", Context.MODE_PRIVATE)
                 .getAll());
         assertFalse(AdminSession.isActive());
-        assertEquals(0, padActions);
     }
 
     private void createControl() {
@@ -405,12 +319,15 @@ public class RemoteInputModeTest {
             @Override public void onConfirm() { padActions++; }
         });
         mode = new RemoteInputMode(activity, primary, keypad, () -> changes++);
-        root.addView(mode.toggle());
         root.addView(keypad);
         activity.setContentView(root);
         controller.visible().windowFocusChanged(true);
         ShadowLooper.idleMainLooper();
         mode.focusEntry();
+    }
+
+    private View findToggle() {
+        return controller.get().getWindow().getDecorView().findViewWithTag("keypad_toggle");
     }
 
     private void closeControl() {
@@ -436,17 +353,18 @@ public class RemoteInputModeTest {
     }
 
     private void press(int deviceId, int code) {
-        assertTrue(send(KeyEvent.ACTION_DOWN, code, 0, 0, deviceId));
-        assertTrue(send(KeyEvent.ACTION_UP, code, 0, 0, deviceId));
+        send(KeyEvent.ACTION_DOWN, code, 0, 0, deviceId);
+        send(KeyEvent.ACTION_UP, code, 0, 0, deviceId);
     }
 
     private boolean send(int action, int code, int repeat, int flags) {
         return send(action, code, repeat, flags, -1);
     }
 
+    /** The screens hand every key to the pad first, so that is the only route under test. */
     private boolean send(int action, int code, int repeat, int flags, int deviceId) {
         KeyEvent event = new KeyEvent(0L, 0L, action, code, repeat, 0, deviceId, 0, flags);
-        boolean consumed = mode.handleKeyEvent(event) || keypad.handleKeyEvent(event);
+        boolean consumed = keypad.handleKeyEvent(event);
         ShadowLooper.idleMainLooper();
         return consumed;
     }
@@ -458,7 +376,7 @@ public class RemoteInputModeTest {
         ShadowLooper.idleMainLooper();
     }
 
-    private static int[] digits(int firstCode, int from, int until) {
+    static int[] digits(int firstCode, int from, int until) {
         int[] keys = new int[until - from];
         for (int i = from; i < until; i++) keys[i - from] = firstCode + i;
         return keys;
