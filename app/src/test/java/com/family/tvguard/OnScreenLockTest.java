@@ -105,14 +105,18 @@ public class OnScreenLockTest {
     }
 
     @Test
-    public void onScreenPinUnlocksTodayButNeverChangesTheDailyQuota() {
+    public void onScreenPinHandsOverToTheParentPanelAndKeepsTheQuotaLock() {
         int limit = prefs.getDailyLimitMinutes();
         ScreenRemote.digits(activity, "13579");
         assertEquals("●●●●●", input());
         assertLocked();
         ScreenRemote.digits(activity, "0");
-        assertFalse(service.isLocked());
-        assertTrue(prefs.isUnlockedToday());
+        // Since 2.5.12 a correct PIN proves a parent is present; it buys no viewing time.
+        assertTrue(service.isLocked());
+        assertTrue(AdminSession.isActive());
+        Intent panel = shadowOf(activity).getNextStartedActivity();
+        assertNotNull(panel);
+        assertEquals(MainActivity.class.getName(), panel.getComponent().getClassName());
         assertEquals(limit, prefs.getDailyLimitMinutes());
         assertEquals(1800L, prefs.getUsedSeconds());
     }
@@ -152,7 +156,9 @@ public class OnScreenLockTest {
         ScreenRemote.expireCooldown(prefs);
         ScreenRemote.assertKeysEnabled(activity, true);
         ScreenRemote.digits(activity, "135790");
-        assertTrue(prefs.isUnlockedToday());
+        assertTrue(AdminSession.isActive());
+        assertEquals(MainActivity.class.getName(), shadowOf(activity).getNextStartedActivity()
+                .getComponent().getClassName());
     }
 
     @Test
@@ -168,7 +174,6 @@ public class OnScreenLockTest {
         assertEquals("parent_manage", activity.getWindow().getDecorView().findFocus().getTag());
         ScreenRemote.press(activity, KeyEvent.KEYCODE_NUMPAD_ENTER);
         assertNotNull(shadowOf(activity).getNextStartedActivity());
-        assertFalse(prefs.isUnlockedToday());
         assertFalse(AdminSession.isActive());
     }
 
@@ -195,6 +200,5 @@ public class OnScreenLockTest {
     private void assertLocked() {
         assertTrue(service.isLocked());
         assertTrue(prefs.isGuardActive());
-        assertFalse(prefs.isUnlockedToday());
     }
 }

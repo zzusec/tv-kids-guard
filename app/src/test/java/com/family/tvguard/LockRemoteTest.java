@@ -83,7 +83,6 @@ public class LockRemoteTest {
             LockActivity.launch(context);
             assertNull(shadowOf(context).getNextStartedActivity());
             assertTrue(service.isLocked());
-            assertFalse(prefs.isUnlockedToday());
 
             shadowOf(power).setIsScreenOn(true);
             LockActivity.launch(context);
@@ -95,12 +94,14 @@ public class LockRemoteTest {
     }
 
     @Test
-    public void physicalDigitsAndOkUnlockWithTheParentPin() {
+    public void physicalDigitsAndOkHandTheParentOverToThePanel() {
         for (char digit : "135790".toCharArray()) {
             press(KeyEvent.KEYCODE_0 + digit - '0');
         }
-        assertFalse(service.isLocked());
-        assertTrue(prefs.isUnlockedToday());
+        assertTrue(service.isLocked());
+        assertTrue(AdminSession.isActive());
+        assertEquals(MainActivity.class.getName(), shadowOf(activity).getNextStartedActivity()
+                .getComponent().getClassName());
         assertEquals(1800L, prefs.getUsedSeconds());
     }
 
@@ -119,7 +120,6 @@ public class LockRemoteTest {
         assertTrue(service.isLocked());
         press(KeyEvent.KEYCODE_BACK);
         assertTrue(prefs.isGuardActive());
-        assertFalse(prefs.isUnlockedToday());
     }
 
     @Test
@@ -131,7 +131,6 @@ public class LockRemoteTest {
 
         assertNotNull(shadowOf(activity).getNextStartedActivity());
         assertTrue(service.isLocked());
-        assertFalse(prefs.isUnlockedToday());
         assertFalse(AdminSession.isActive());
     }
 

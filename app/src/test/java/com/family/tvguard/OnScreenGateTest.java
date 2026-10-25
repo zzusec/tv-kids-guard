@@ -64,7 +64,6 @@ public class OnScreenGateTest {
         assertEquals("●", input());
         assertEquals(0, prefs.getFailCount());
         assertFalse(AdminSession.isActive());
-        assertFalse(prefs.isUnlockedToday());
         assertTrue(prefs.isGuardActive());
     }
 
@@ -91,7 +90,6 @@ public class OnScreenGateTest {
         ScreenRemote.digits(activity, Prefs.DEFAULT_PASSWORD);
         assertTrue(AdminSession.isActive());
         assertTrue(prefs.needsPasswordSetup());
-        assertFalse(prefs.isUnlockedToday());
         ScreenRemote.digits(activity, "135790");
         assertTrue(((TextView) activity.findViewById(R.id.lock_prompt)).getText()
                 .toString().contains("再次输入"));
@@ -105,7 +103,6 @@ public class OnScreenGateTest {
         assertTrue(activity.isFinishing());
         assertEquals(MainActivity.class.getName(), shadowOf(activity).getNextStartedActivity()
                 .getComponent().getClassName());
-        assertFalse(prefs.isUnlockedToday());
         assertTrue(prefs.isGuardActive());
     }
 
@@ -126,7 +123,6 @@ public class OnScreenGateTest {
         ScreenRemote.press(activity, KeyEvent.KEYCODE_DPAD_UP);
         ScreenRemote.digits(activity, "135790");
         assertTrue(AdminSession.isActive());
-        assertFalse(prefs.isUnlockedToday());
     }
 
     @Test
@@ -154,7 +150,6 @@ public class OnScreenGateTest {
         ScreenRemote.digits(activity, "135790");
         assertTrue(prefs.needsPasswordSetup());
         assertFalse(activity.isFinishing());
-        assertFalse(prefs.isUnlockedToday());
         assertFalse(AdminSession.isActive());
     }
 

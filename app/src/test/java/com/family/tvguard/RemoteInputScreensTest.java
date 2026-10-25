@@ -72,7 +72,6 @@ public class RemoteInputScreensTest {
         digits(activity.getWindow(), "35790");
         assertTrue(AdminSession.isActive());
         assertTrue(activity.isFinishing());
-        assertFalse(prefs.isUnlockedToday());
     }
 
     @Test
@@ -106,11 +105,13 @@ public class RemoteInputScreensTest {
         press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_CENTER);
         assertTrue(activity.getWindow().getDecorView().findViewWithTag("key_1").isShown());
         assertTrue(service.get().isLocked());
-        assertFalse(prefs.isUnlockedToday());
         assertFalse(AdminSession.isActive());
         assertEquals(1800L, prefs.getUsedSeconds());
+        // The PIN proves a parent is present: it authorizes the panel, it never buys viewing time.
         ScreenRemote.digits(activity, "135790");
-        assertTrue(prefs.isUnlockedToday());
+        assertTrue(AdminSession.isActive());
+        assertTrue(service.get().isLocked());
+        assertEquals(1800L, prefs.getUsedSeconds());
     }
 
     @Test

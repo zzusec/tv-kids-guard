@@ -226,7 +226,6 @@ public class MainActivityRemoteTest {
         virtualConfirm(latestPinDialog().getWindow());
         assertEquals(900L, prefs.getBonusSeconds());
         assertEquals(Prefs.DEFAULT_LIMIT_MINUTES, prefs.getDailyLimitMinutes());
-        assertFalse(prefs.isUnlockedToday());
     }
 
     @Test

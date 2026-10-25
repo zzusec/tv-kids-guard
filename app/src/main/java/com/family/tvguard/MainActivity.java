@@ -754,8 +754,6 @@ public class MainActivity extends Activity {
         }
         ((TextView) findViewById(R.id.daily_limit_value)).setText(prefs.getDailyLimitMinutes() + " 分钟");
         ((TextView) findViewById(R.id.used_time_value)).setText(prefs.getUsedSeconds() / 60L + " 分钟");
-        findViewById(R.id.today_override).setVisibility(enabled && prefs.isUnlockedToday()
-                ? View.VISIBLE : View.GONE);
         TextView bonus = findViewById(R.id.bonus_summary);
         bonus.setText("今天临时加时 " + prefs.getBonusSeconds() / 60L + " 分钟");
         bonus.setVisibility(prefs.getBonusSeconds() > 0L ? View.VISIBLE : View.GONE);

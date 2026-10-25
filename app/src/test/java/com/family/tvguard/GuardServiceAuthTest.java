@@ -96,7 +96,6 @@ public class GuardServiceAuthTest {
         assertFalse(service.onOk());
         assertTrue(service.isLocked());
         assertTrue(prefs.isGuardActive());
-        assertFalse(prefs.isUnlockedToday());
         assertTrue(prefs.needsPasswordSetup());
         assertTrue(AdminSession.isActive());
         Intent launched = org.robolectric.Shadows.shadowOf(service).getNextStartedActivity();
@@ -114,7 +113,6 @@ public class GuardServiceAuthTest {
         authController.get().onBackPressed();
 
         assertFalse(AdminSession.isActive());
-        assertFalse(prefs.isUnlockedToday());
         assertTrue(prefs.isGuardActive());
         serviceController.destroy();
         serviceController = null;
@@ -124,14 +122,22 @@ public class GuardServiceAuthTest {
 
     @Test
     @Config(sdk = {19, 24, 33})
-    public void configuredParentPinStillReleasesTodaysQuota() {
+    public void configuredParentPinOpensThePanelAndKeepsTheQuotaLock() {
         prefs.setPassword("135790");
         GuardService service = startService();
+        while (org.robolectric.Shadows.shadowOf(service).getNextStartedActivity() != null) {
+            // Discard the initial quota-lock launch so the next intent is the parent handover.
+        }
         enterPin(service, "135790");
 
         assertTrue(service.onOk());
-        assertFalse(service.isLocked());
-        assertTrue(prefs.isUnlockedToday());
+        assertTrue("the PIN proves a parent is present, it does not buy viewing time",
+                service.isLocked());
+        assertTrue(prefs.isGuardActive());
+        assertTrue(AdminSession.isActive());
+        Intent launched = org.robolectric.Shadows.shadowOf(service).getNextStartedActivity();
+        assertNotNull(launched);
+        assertEquals(MainActivity.class.getName(), launched.getComponent().getClassName());
     }
 
     @Test
@@ -156,14 +162,12 @@ public class GuardServiceAuthTest {
     public void decreasingDailyLimitAppliesImmediatelyAndRearmsTodaysQuota() {
         prefs.setUsedSeconds(600L);
         prefs.setLocked(false);
-        prefs.setUnlockedToday(true);
         GuardService service = startService();
         AdminSession.grant();
 
         service.setDailyLimitMinutes(5);
 
         assertEquals(5, prefs.getDailyLimitMinutes());
-        assertFalse(prefs.isUnlockedToday());
         assertTrue(service.isLocked());
         assertTrue(prefs.isGuardActive());
         assertEquals(600L, prefs.getUsedSeconds());
@@ -186,7 +190,6 @@ public class GuardServiceAuthTest {
 
         assertFalse(service.onOk());
         assertTrue(service.isLocked());
-        assertFalse(prefs.isUnlockedToday());
         assertFalse(AdminSession.isActive());
     }
 
@@ -291,7 +294,6 @@ public class GuardServiceAuthTest {
         serviceController.destroy();
         serviceController = null;
         assertTrue(startService().isLocked());
-        assertFalse(prefs.isUnlockedToday());
     }
 
     /** However the screen was blanked, the lock is the first thing back when it lights up. */
@@ -417,7 +419,6 @@ public class GuardServiceAuthTest {
 
         assertEquals(0, activityShadow().stopCalls);
         assertEquals(ActivityManager.LOCK_TASK_MODE_LOCKED, activityManager.getLockTaskModeState());
-        assertFalse(prefs.isUnlockedToday());
         assertFalse(AdminSession.isActive());
         Intent started = activityShadow().getNextStartedActivity();
         assertNotNull(started);

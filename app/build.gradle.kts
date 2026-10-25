@@ -26,8 +26,8 @@ android {
         applicationId = "com.family.tvguard"
         minSdk = 19
         targetSdk = 33
-        versionCode = 42
-        versionName = "2.5.11"
+        versionCode = 43
+        versionName = "2.5.12"
     }
 
     signingConfigs {

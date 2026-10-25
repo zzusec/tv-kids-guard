@@ -204,6 +204,32 @@ public class LockActivity extends Activity {
         AdminAuthActivity.launch(instance != null ? instance : ctx);
     }
 
+    /**
+     * Opens the parent panel for a PIN that was just verified on the lock screen, so the parent
+     * does not have to type it a second time. Only the panel is allowed to hand out viewing time,
+     * which means the lock itself stays in place underneath and returns as soon as the panel
+     * closes. Same package, so Lock Task does not have to be released.
+     */
+    static void openParentConsole(Context ctx) {
+        GuardService service = GuardService.get();
+        if (service != null) {
+            service.setParentUiVisible(true);
+        }
+        // The verified PIN can arrive from the lock screen or from the guard service, and a
+        // service may only open an activity of its own task, so the flag follows the caller.
+        Context caller = instance != null ? instance : ctx;
+        Intent intent = new Intent(caller, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        if (!(caller instanceof Activity)) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        }
+        try {
+            caller.startActivity(intent);
+        } catch (Exception e) {
+            GuardService.reportFailure("家长面板启动失败，请用遥控器上的家长管理重新进入", e);
+        }
+    }
+
     private boolean lockTaskRunning() {
         ActivityManager am = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
         if (am == null) {
@@ -424,7 +450,7 @@ public class LockActivity extends Activity {
         } else {
             promptView.setText(prefs.needsPasswordSetup()
                     ? "请家长按 OK 设置密码"
-                    : "输入 6 位家长密码解除限时");
+                    : "输入 6 位家长密码进入家长面板");
             StringBuilder mask = new StringBuilder();
             for (int i = 0; i < service.lockInput().length(); i++) {
                 mask.append('●');

@@ -127,7 +127,6 @@ public class UninstallProtectionTest {
                 .create().start().resume().visible();
         try {
             assertFalse(gate.get().isFinishing());
-            assertFalse(prefs.isUnlockedToday());
             assertNull(shadowOf(gate.get()).getNextStartedActivity());
         } finally {
             gate.pause().stop().destroy();

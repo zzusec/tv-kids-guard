@@ -153,7 +153,6 @@ public class MainActivitySettingsTest {
                 ((TextView) activity.findViewById(R.id.status_text)).getText().toString());
         assertEquals("30 分钟", ((TextView) activity.findViewById(R.id.daily_limit_value)).getText().toString());
         assertEquals("2 分钟", ((TextView) activity.findViewById(R.id.used_time_value)).getText().toString());
-        assertEquals(View.GONE, activity.findViewById(R.id.today_override).getVisibility());
         assertEquals(View.GONE, activity.findViewById(R.id.bonus_summary).getVisibility());
         String warning = ((TextView) activity.findViewById(R.id.warn_text)).getText().toString();
         assertTrue(warning.contains("设置保护未开启"));
@@ -203,17 +202,14 @@ public class MainActivitySettingsTest {
     }
 
     @Test
-    public void parentSummaryExplainsTodaysTemporaryBonusAndUnlimitedState() {
+    public void parentSummaryExplainsTodaysTemporaryBonus() {
         prefs.setBonusSeconds(600L);
-        prefs.setUnlockedToday(true);
         MainActivity activity = startPanel(true);
 
         assertEquals("防护已开启",
                 ((TextView) activity.findViewById(R.id.status_text)).getText().toString());
         assertEquals("30 分钟", ((TextView) activity.findViewById(R.id.daily_limit_value)).getText().toString());
         assertEquals("0 分钟", ((TextView) activity.findViewById(R.id.used_time_value)).getText().toString());
-        assertEquals(View.VISIBLE, activity.findViewById(R.id.today_override).getVisibility());
-        assertEquals("今天不限时", ((TextView) activity.findViewById(R.id.today_override)).getText().toString());
         assertEquals(View.VISIBLE, activity.findViewById(R.id.bonus_summary).getVisibility());
         assertEquals("今天临时加时 10 分钟", ((TextView) activity.findViewById(R.id.bonus_summary)).getText().toString());
     }
@@ -226,7 +222,6 @@ public class MainActivitySettingsTest {
                 ((TextView) activity.findViewById(R.id.status_text)).getText().toString());
         assertEquals("30 分钟", ((TextView) activity.findViewById(R.id.daily_limit_value)).getText().toString());
         assertEquals("0 分钟", ((TextView) activity.findViewById(R.id.used_time_value)).getText().toString());
-        assertEquals(View.GONE, activity.findViewById(R.id.today_override).getVisibility());
         String warning = ((TextView) activity.findViewById(R.id.warn_text)).getText().toString();
         assertFalse(warning.contains("悬浮窗"));
         assertFalse(warning.contains("无障碍"));

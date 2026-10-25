@@ -39,8 +39,6 @@ public class GuardService extends Service {
     private static final String TAG = "TvGuard";
     /** A starved or replayed tick may never dump a long wall-clock gap into the day's counter. */
     static final long MAX_COUNTED_TICK_MILLIS = 4000L;
-    /** What the corner says while the admin has opened the day with the password. */
-    static final String UNLIMITED_NOTICE_TEXT = "今天不限时";
 
     private static GuardService instance;
     private static String lastFailure = "";
@@ -212,11 +210,12 @@ public class GuardService extends Service {
     }
 
     /**
-     * A password entry today switches the quota off until the next day. Until the admin sets a
-     * password of their own the default one applies, so the limit holds from the first boot.
+     * The day's allowance is spent. Nothing suspends it any more: since 2.5.12 the parent PIN
+     * proves a parent is present instead of switching the quota off, so the only way to give the
+     * child more time is the panel's own bonus or a new daily limit.
      */
     private boolean isQuotaExhausted() {
-        return !prefs.isUnlockedToday() && remainingMillis() <= 0L;
+        return remainingMillis() <= 0L;
     }
 
     private void tick() {
@@ -269,12 +268,9 @@ public class GuardService extends Service {
             if (!maintenance) {
                 keepLockInFront(now);
             }
-        } else if (prefs.isUnlockedToday()) {
-            // The admin opened the day with the password: the quota is off, but the corner has to
-            // say so. A blank corner reads to a child as "the guard is off", and leaves the parent
-            // with no proof that the protection is still running.
-            showUnlimitedNotice();
         } else {
+            // The corner is the proof that the guard is still running, so it counts down on every
+            // unlocked day as well. There is no longer a day without a countdown to explain.
             updateCountdown(remaining);
         }
 
@@ -404,7 +400,7 @@ public class GuardService extends Service {
     }
 
     /**
-     * @return true when the lock was released (or a stage advanced).
+     * @return true when a stage advanced: the panel was opened, or the lock was released.
      */
     boolean onOk() {
         if (!locked) {
@@ -420,33 +416,27 @@ public class GuardService extends Service {
             return false;
         }
         if (prefs.needsPasswordSetup()) {
-            // The factory PIN only authorizes replacing it, never a day's unlimited viewing.
+            // The factory PIN only authorizes replacing it; it never reaches the panel at all.
             AdminSession.grant();
             LockActivity.openParentGate(this);
             return false;
         }
-        unlockForToday();
+        // Since 2.5.12 the password is proof that a parent is present, not a day of unlimited
+        // viewing: it hands over to the panel, and only the panel's bonus or daily limit can give
+        // the child more time. The lock stays up and returns when the panel closes.
+        AdminSession.grant();
+        LockActivity.openParentConsole(this);
         return true;
     }
 
     /**
-     * A correct password releases the lock and switches the quota off for the rest of the day,
-     * so the child cannot simply wait for the countdown to expire again.
-     */
-    private void unlockForToday() {
-        prefs.setUnlockedToday(true);
-        exitLock();
-    }
-
-    /**
-     * Re-arms the lock after an admin unlock. The unlock had suspended the day's quota, so it
-     * is switched back on as well: this is the exact inverse of entering the password.
+     * Re-arms the lock from the panel. The day's quota is whatever the parent set it to: locking
+     * cannot suspend it, and unlocking cannot restore time that was already watched.
      */
     void lockNow() {
         if (!AdminSession.isActive()) {
             return;
         }
-        prefs.setUnlockedToday(false);
         if (!locked) {
             enterLock();
         }
@@ -519,7 +509,6 @@ public class GuardService extends Service {
         }
         prefs.setDailyLimitMinutes(minutes);
         // A new limit resumes the daily quota without resetting watched time or today's bonus.
-        prefs.setUnlockedToday(false);
         if (locked && remainingMillis() > 0L) {
             exitLock();
         }
@@ -534,7 +523,6 @@ public class GuardService extends Service {
         }
         long seconds = Math.max(0L, prefs.getBonusSeconds() + minutes * 60L);
         prefs.setBonusSeconds(seconds);
-        prefs.setUnlockedToday(false);
         if (locked) {
             exitLock();
         }
@@ -610,21 +598,6 @@ public class GuardService extends Service {
                 : String.format(java.util.Locale.US, "%02d:%02d", minutes, seconds % 60L);
         countdownText.setText("剩余 " + clock);
         countdownText.setTextColor(seconds <= 300L ? Color.parseColor("#FF6B6B") : Color.WHITE);
-    }
-
-    /**
-     * The corner for a day the admin opened with the password. The quota is off, but the pill
-     * stays up and says so: a blank corner reads to a child as "the guard is off", and leaves the
-     * parent without any proof that the protection is still running. Amber, the same colour the
-     * parent panel uses for its "今天不限时" chip.
-     */
-    private void showUnlimitedNotice() {
-        showCountdown();
-        if (!countdownAttached || countdownText == null) {
-            return;
-        }
-        countdownText.setText(UNLIMITED_NOTICE_TEXT);
-        countdownText.setTextColor(Color.parseColor("#FFB84D"));
     }
 
     private void removeCountdown() {

@@ -66,7 +66,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="12dp"
                         android:gravity="center"
-                        android:text="输入 6 位家长密码解除限时"
+                        android:text="输入 6 位家长密码进入家长面板"
                         android:textSize="18sp" />
 
                     <TextView
@@ -107,7 +107,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="12dp"
                         android:gravity="center"
-                        android:text="方向下 / 右进入数字盘\n输入密码可使今天不限时"
+                        android:text="方向下 / 右进入数字盘\n输入密码进入家长面板"
                         android:textColor="@color/on_dark_mute" />
 
                     <FrameLayout

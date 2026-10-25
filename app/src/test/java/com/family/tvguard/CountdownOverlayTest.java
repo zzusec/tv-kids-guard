@@ -40,9 +40,10 @@ import static org.robolectric.Shadows.shadowOf;
  * leaves the set on standby for hours must get its whole allowance back, and a starved or replayed
  * tick must not quietly spend the day while nobody is looking.
  *
- * <p>An opened day still shows a corner. When the admin spends the password and unlocks the day, the
- * pill stays up reading "今天不限时" instead of vanishing, so a child cannot read a blank corner as
- * "the guard is off" and the parent can see the protection is still running.
+ * <p>The corner always counts down. Since 2.5.12 nothing can suspend the day's allowance — the
+ * parent PIN hands the viewer over to the panel instead of buying a free day — so the pill never
+ * swaps to a standing "今天不限时" notice. A parent who wants the child to see more time grants it
+ * through the panel, and the corner immediately reflects the bigger number.
  */
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = {19, 24, 33}, qualifiers = "w960dp-h540dp-land")
@@ -63,7 +64,6 @@ public class CountdownOverlayTest {
         context.getSharedPreferences("tvguard_prefs", Context.MODE_PRIVATE).edit().clear().commit();
         prefs = new Prefs(context);
         prefs.setUsedSeconds(BASELINE_USED_SECONDS);
-        prefs.setUnlockedToday(false);
         // Advancing the simulated clock is part of these tests; pin the day so no run can trip the
         // midnight rollover and reset the counter behind the assertions.
         context.getSharedPreferences("tvguard_prefs", Context.MODE_PRIVATE).edit()
@@ -83,7 +83,6 @@ public class CountdownOverlayTest {
             serviceController.destroy();
             serviceController = null;
         }
-        prefs.setUnlockedToday(false);
     }
 
     private void createGuard() {
@@ -144,38 +143,45 @@ public class CountdownOverlayTest {
     // ------------------------------------------------------------------ corner
 
     @Test
-    public void anUnlockedDayStillShowsTheCornerNotice() throws Exception {
+    public void theCornerShowsACountdownAndNeverAnUnlimitedNotice() throws Exception {
         createGuard();
-        prefs.setUnlockedToday(true);
         tick.invoke(service);
         List<View> pills = pillViews();
-        assertEquals("不限时也要保留右上角那一枚提示", 1, pills.size());
-        assertEquals(GuardService.UNLIMITED_NOTICE_TEXT, textOf(pills.get(0)));
-    }
-
-    @Test
-    public void theCornerCountsDownAgainOnceTheDayIsNotUnlocked() throws Exception {
-        createGuard();
-        prefs.setUnlockedToday(true);
-        tick.invoke(service);
-        prefs.setUnlockedToday(false);
-        tick.invoke(service);
-        List<View> pills = pillViews();
-        assertEquals("切回配额日不得多出一枚角标", 1, pills.size());
+        assertEquals("右上角必须有一枚倒计时角标", 1, pills.size());
         String text = textOf(pills.get(0));
-        assertTrue("配额日右上角应显示剩余时间，实际为：" + text, text.startsWith("剩余 "));
+        assertTrue("角标应显示剩余时间，实际为：" + text, text.startsWith("剩余 "));
+        long remaining = pillSeconds(pills.get(0));
+        // 30 分钟限额减去已看的 60 秒：一分钟都不许多，也永远不是一句"今天不限时"。
+        assertTrue("剩余应略少于 29 分钟，实际 " + remaining + " 秒",
+                remaining <= (Prefs.DEFAULT_LIMIT_MINUTES - 1) * 60L
+                        && remaining >= (Prefs.DEFAULT_LIMIT_MINUTES - 2) * 60L);
     }
 
     @Test
-    public void repeatedTicksNeverStackTheNoticeIntoSeveralPills() throws Exception {
+    public void extraTimeWidensTheCountdownInsteadOfSuspendingTheDay() throws Exception {
         createGuard();
-        prefs.setUnlockedToday(true);
+        tick.invoke(service);
+        List<View> pills = pillViews();
+        assertEquals("角标只能有一枚", 1, pills.size());
+        long before = pillSeconds(pills.get(0));
+        prefs.setBonusSeconds(600L);
+        tick.invoke(service);
+        pills = pillViews();
+        assertEquals("加时不得多出一枚角标", 1, pills.size());
+        String text = textOf(pills.get(0));
+        assertTrue("角标应显示剩余时间，实际为：" + text, text.startsWith("剩余 "));
+        assertEquals("临时加时应当原样加到剩余时间上", before + 600L, pillSeconds(pills.get(0)));
+    }
+
+    @Test
+    public void repeatedTicksNeverStackTheCornerIntoSeveralPills() throws Exception {
+        createGuard();
         for (int i = 0; i < 8; i++) {
             tick.invoke(service);
         }
         List<View> pills = pillViews();
         assertEquals("角标只能有一枚", 1, pills.size());
-        assertEquals(GuardService.UNLIMITED_NOTICE_TEXT, textOf(pills.get(0)));
+        assertTrue(textOf(pills.get(0)).startsWith("剩余 "));
     }
 
     /**
@@ -187,7 +193,6 @@ public class CountdownOverlayTest {
     public void withoutTheOverlayPermissionNothingIsAttached() throws Exception {
         ShadowSettings.setCanDrawOverlays(false);
         createGuard();
-        prefs.setUnlockedToday(true);
         tick.invoke(service);
         assertTrue("没有悬浮窗权限时不得尝试贴角标", attachedViews().isEmpty());
     }
@@ -231,6 +236,16 @@ public class CountdownOverlayTest {
 
     private String textOf(View view) {
         return ((TextView) view).getText().toString();
+    }
+
+    /** The pill's clock as seconds, so a test can compare the corner against the allowance. */
+    private long pillSeconds(View view) {
+        String clock = textOf(view).substring("剩余 ".length());
+        long total = 0L;
+        for (String part : clock.split(":")) {
+            total = total * 60L + Long.parseLong(part);
+        }
+        return total;
     }
 
     /** Which windows the guard has attached, for the assertion messages. */

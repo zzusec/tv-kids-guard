@@ -18,7 +18,12 @@ final class Prefs {
     private static final String KEY_BONUS = "bonus_seconds";
     private static final String KEY_DAILY_LIMIT = "daily_limit_minutes";
     private static final String KEY_LOCKED = "locked";
-    private static final String KEY_UNLOCKED_TODAY = "unlocked_today";
+    /**
+     * Written by 2.5.11 and earlier, which let the parent PIN switch the day's quota off. The
+     * feature is gone, but the stored flag is not: it has to be dropped on the first read after
+     * the upgrade so a day that was opened starts limiting again immediately.
+     */
+    private static final String LEGACY_UNLOCKED_TODAY = "unlocked_today";
     private static final String KEY_FAIL_COUNT = "fail_count";
     private static final String KEY_LOCKOUT_UNTIL = "lockout_until";
     private static final String KEY_PROTECTION_ENABLED = "protection_enabled";
@@ -45,6 +50,9 @@ final class Prefs {
 
     Prefs(Context ctx) {
         sp = ctx.getApplicationContext().getSharedPreferences(FILE, Context.MODE_PRIVATE);
+        if (sp.contains(LEGACY_UNLOCKED_TODAY)) {
+            sp.edit().remove(LEGACY_UNLOCKED_TODAY).apply();
+        }
     }
 
     private static String today() {
@@ -89,7 +97,6 @@ final class Prefs {
                     .putLong(KEY_USED, 0L)
                     .putLong(KEY_BONUS, 0L)
                     .putBoolean(KEY_LOCKED, false)
-                    .putBoolean(KEY_UNLOCKED_TODAY, false)
                     .putInt(KEY_FAIL_COUNT, 0)
                     .putLong(KEY_LOCKOUT_UNTIL, 0L)
                     .apply();
@@ -215,16 +222,6 @@ final class Prefs {
         sp.edit().putBoolean(KEY_LOCKED, locked).apply();
     }
 
-    /** Set once the admin types the password: the daily quota is off until tomorrow. */
-    boolean isUnlockedToday() {
-        rollOverIfNeeded();
-        return sp.getBoolean(KEY_UNLOCKED_TODAY, false);
-    }
-
-    void setUnlockedToday(boolean unlocked) {
-        sp.edit().putBoolean(KEY_UNLOCKED_TODAY, unlocked).apply();
-    }
-
     int getFailCount() {
         return sp.getInt(KEY_FAIL_COUNT, 0);
     }
@@ -281,7 +278,6 @@ final class Prefs {
      * window in which the lock is forgotten.
      */
     boolean isGuardActive() {
-        return isProtectionEnabled()
-                && (isLocked() || (!isUnlockedToday() && remainingSeconds() <= 0L));
+        return isProtectionEnabled() && (isLocked() || remainingSeconds() <= 0L);
     }
 }

@@ -118,13 +118,12 @@ public class AppLockServiceTest {
 
         assertGateStarted();
         assertEquals(0L, prefs.getUsedSeconds());
-        assertEquals(false, prefs.isUnlockedToday());
     }
 
     @Test
-    public void watchingUnlockDoesNotAuthorizeSettingsMaintenance() {
+    public void aParentSessionBoughtOnTheLockScreenDoesNotAuthorizeSettingsMaintenance() {
         register(new Intent(Settings.ACTION_SETTINGS), "vendor.settings");
-        prefs.setUnlockedToday(true);
+        AdminSession.grant();
         window("vendor.settings");
         assertGateStarted();
     }
@@ -487,7 +486,6 @@ public class AppLockServiceTest {
         assertFalse(AppLockService.isConnected());
         assertNull(shadowOf(context).getNextStartedActivity());
         assertTrue(prefs.isGuardActive());
-        assertFalse(prefs.isUnlockedToday());
         assertFalse(AdminSession.isActive());
         assertFalse(AdminSession.isMaintenanceActive());
 

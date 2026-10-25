@@ -123,21 +123,19 @@ public class ParentPanelVisualTest {
     }
 
     @Test
-    public void unlimitedStateAndBonusRemainVisibleWithoutChangingDailyQuota() throws Exception {
-        prefs.setUnlockedToday(true);
+    public void temporaryBonusStaysVisibleWithoutChangingTheDailyQuota() throws Exception {
         prefs.setBonusSeconds(600L);
         start(true);
-        assertEquals(View.VISIBLE, activity.findViewById(R.id.today_override).getVisibility());
         assertEquals(View.VISIBLE, activity.findViewById(R.id.bonus_summary).getVisibility());
         assertEquals(30, prefs.getDailyLimitMinutes());
-        for (int id : new int[] {R.id.today_override, R.id.bonus_summary, R.id.warn_text, R.id.version_text}) {
+        for (int id : new int[] {R.id.bonus_summary, R.id.warn_text, R.id.version_text}) {
             View view = activity.findViewById(id);
             Rect visible = new Rect();
             assertTrue("TV summary element must be visible: " + getClass().getSimpleName()
                     + " id=" + id + " height=" + view.getHeight(), view.getGlobalVisibleRect(visible));
             assertEquals("Summary, permission notices and version must fit together on TV", view.getHeight(), visible.height());
         }
-        capture(activity.getWindow().getDecorView(), "tv-unlimited");
+        capture(activity.getWindow().getDecorView(), "tv-bonus");
     }
 
     @Test
@@ -146,7 +144,6 @@ public class ParentPanelVisualTest {
         Settings.Secure.putString(context.getContentResolver(),
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
                 new android.content.ComponentName(context, AppLockService.class).flattenToString());
-        prefs.setUnlockedToday(true);
         prefs.setBonusSeconds(600L);
         start(true);
 
@@ -176,7 +173,7 @@ public class ParentPanelVisualTest {
             ShadowLooper.idleMainLooper();
             LockActivity screen = lock.get();
             assertEquals("今日电视时长已用完", ((TextView) screen.findViewById(R.id.lock_title)).getText().toString());
-            assertEquals("输入 6 位家长密码解除限时", ((TextView) screen.findViewById(R.id.lock_prompt)).getText().toString());
+            assertEquals("输入 6 位家长密码进入家长面板", ((TextView) screen.findViewById(R.id.lock_prompt)).getText().toString());
             assertEquals("", ((TextView) screen.findViewById(R.id.lock_input)).getText().toString());
             capture(screen.getWindow().getDecorView(), "tv-quota-used");
         } finally {

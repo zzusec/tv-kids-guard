@@ -303,7 +303,6 @@ public class RemoteAuthTest {
         virtualDigits(activity, "000000");
         assertTrue(AdminSession.isActive());
         assertTrue(prefs.needsPasswordSetup());
-        assertFalse(prefs.isUnlockedToday());
         assertTrue(prefs.isGuardActive());
         assertFalse(activity.isFinishing());
         virtualDigits(activity, "000000");
@@ -319,7 +318,6 @@ public class RemoteAuthTest {
         assertFalse(prefs.needsPasswordSetup());
         assertTrue(prefs.checkPassword("246810"));
         assertTrue(activity.isFinishing());
-        assertFalse(prefs.isUnlockedToday());
     }
 
     @Test

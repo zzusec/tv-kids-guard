@@ -149,15 +149,14 @@ public class SettingsGateLoopTest {
         assertTrue("时长用完后设置页先被时长锁屏挡住", activityStarted(LockActivity.class));
         markBaseline();
 
-        // The parent reaches the panel through 家长管理, which grants a session but never spends the
-        // day's unlock, so the lock stays armed underneath the whole visit.
+        // The parent reaches the panel through 家长管理, which grants a session but buys no viewing
+        // time, so the lock stays armed underneath the whole visit.
         gateController = Robolectric.buildActivity(AdminAuthActivity.class)
                 .create().start().resume().visible().windowFocusChanged(true);
         AdminAuthActivity gate = gateController.get();
         assertNotNull(gate);
         typePin(gate);
         assertTrue("正确的密码必须建立家长会话", AdminSession.isActive());
-        assertFalse("通过家长验证进入面板不得送出一天的时长", prefs.isUnlockedToday());
         gateController.pause().stop().destroy();
         gateController = null;
 

@@ -92,16 +92,6 @@
                             android:paddingBottom="5dp"
                             android:textColor="@color/panel_green" />
 
-                        <TextView
-                            android:id="@+id/today_override"
-                            style="@style/PanelText.Caption"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
-                            android:text="今天不限时"
-                            android:textColor="@color/panel_amber"
-                            android:visibility="gone" />
-
                         <View
                             android:layout_width="match_parent"
                             android:layout_height="1dp"
