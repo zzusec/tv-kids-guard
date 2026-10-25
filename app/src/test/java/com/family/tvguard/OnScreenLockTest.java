@@ -3,7 +3,9 @@ package com.family.tvguard;
 import android.app.Application;
 import android.content.Context;
 import android.content.Intent;
+import android.view.Display;
 import android.view.KeyEvent;
+import android.view.WindowManager;
 import android.widget.TextView;
 
 import org.junit.After;
@@ -17,6 +19,8 @@ import org.robolectric.android.controller.ActivityController;
 import org.robolectric.android.controller.ServiceController;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.LooperMode;
+import org.robolectric.shadow.api.Shadow;
+import org.robolectric.shadows.ShadowDisplay;
 import org.robolectric.shadows.ShadowLooper;
 
 import java.util.concurrent.TimeUnit;
@@ -59,6 +63,47 @@ public class OnScreenLockTest {
         controller.pause().stop().destroy();
         if (serviceController != null) serviceController.destroy();
         AdminSession.revoke();
+    }
+
+    /**
+     * A lock screen that holds the panel awake is a television that can never stand by, and a
+     * standby the framework is never told about is a standby the counter charges. Measured on the
+     * BRAVIA 4K 2015, this window was the set's only bright wake lock and its only hold-screen
+     * window, and the television stayed Awake for 29 hours with nobody in front of it.
+     */
+    @Test
+    public void theLockScreenLeavesTheTelevisionFreeToStandBy() {
+        int flags = activity.getWindow().getAttributes().flags;
+        assertEquals("锁屏不得替电视保持亮屏",
+                0, flags & WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        assertTrue("唤醒电视时锁屏要自己亮回来",
+                (flags & WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON) != 0);
+    }
+
+    /** The panel witness needs API 20; a KitKat set only ever had the power manager. */
+    @Test
+    @Config(sdk = {24, 33})
+    public void theLockNeverLightsADarkPanelBackUp() {
+        Application context = RuntimeEnvironment.getApplication();
+        controller.pause();
+        panel(Display.STATE_OFF);
+        LockActivity.launch(context);
+        assertNull("面板熄灭时不得重新拉起锁屏，它带 TURN_SCREEN_ON，会把刚关掉的电视点亮",
+                shadowOf(context).getNextStartedActivity());
+
+        panel(Display.STATE_ON);
+        LockActivity.launch(context);
+        Intent lock = shadowOf(context).getNextStartedActivity();
+        assertNotNull("亮屏之后锁屏必须自己回来", lock);
+        assertEquals(LockActivity.class.getName(), lock.getComponent().getClassName());
+    }
+
+    /** Answers for the display subsystem, which now has a vote over the lock and the counter. */
+    private void panel(int state) {
+        WindowManager wm = (WindowManager) RuntimeEnvironment.getApplication()
+                .getSystemService(Context.WINDOW_SERVICE);
+        ShadowDisplay shadow = Shadow.extract(wm.getDefaultDisplay());
+        shadow.setState(state);
     }
 
     @Test

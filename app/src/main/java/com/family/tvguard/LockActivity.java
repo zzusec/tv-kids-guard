@@ -8,7 +8,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.PowerManager;
+
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
@@ -53,10 +53,7 @@ public class LockActivity extends Activity {
         if (!new Prefs(ctx).isGuardActive() || AdminSession.isMaintenanceActive()) {
             return;
         }
-        // The power key must be able to blank the screen and leave it blank. This window
-        // carries FLAG_TURN_SCREEN_ON, so re-launching it while the panel is dark would light
-        // the room back up about a second after the power key was pressed. SCREEN_ON
-        // re-asserts the lock, so standby is a pause, never an escape.
+        // The power key must be able to blank the screen and leave it blank.
         if (!isScreenOn(ctx)) {
             return;
         }
@@ -71,11 +68,13 @@ public class LockActivity extends Activity {
         }
     }
 
-    /** True while the panel is lit. The guard has nothing to say to a dark screen. */
+    /**
+     * True while the panel is lit. This window carries TURN_SCREEN_ON, so re-launching it while the
+     * room is dark would wake the television about a second after the power key was pressed; the
+     * SCREEN_ON receiver re-asserts the lock instead, so standby is a pause, never an escape.
+     */
     private static boolean isScreenOn(Context ctx) {
-        PowerManager pm = (PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
-        return pm == null || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH
-                ? pm.isInteractive() : pm.isScreenOn());
+        return PanelState.isLit(ctx);
     }
 
     static void dismiss() {
@@ -96,8 +95,13 @@ public class LockActivity extends Activity {
         super.onCreate(savedInstanceState);
         instance = this;
         prefs = new Prefs(this);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-                | WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
+        // Deliberately no FLAG_KEEP_SCREEN_ON: a lock screen that holds the panel awake is a
+        // television that can never stand by, and standby the framework never sees is standby the
+        // counter charges. Measured on the BRAVIA 4K 2015: with this window on screen it was the
+        // set's only bright wake lock and its only hold-screen window, and the framework had gone
+        // 29 hours without entering standby. The lock still has to appear when somebody wakes the
+        // television, which is what TURN_SCREEN_ON plus the SCREEN_ON receiver is for.
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
                 | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
                 | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN);
         setContentView(R.layout.lock_screen);

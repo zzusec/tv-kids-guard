@@ -3,6 +3,7 @@ package com.family.tvguard;
 import android.app.Application;
 import android.content.Context;
 import android.content.Intent;
+import android.view.Display;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.TextView;
@@ -18,6 +19,7 @@ import org.robolectric.android.controller.ServiceController;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.LooperMode;
 import org.robolectric.shadow.api.Shadow;
+import org.robolectric.shadows.ShadowDisplay;
 import org.robolectric.shadows.ShadowPowerManager;
 import org.robolectric.shadows.ShadowSettings;
 import org.robolectric.shadows.ShadowSystemClock;
@@ -73,6 +75,10 @@ public class CountdownOverlayTest {
                 (android.os.PowerManager) context.getSystemService(Context.POWER_SERVICE);
         power = Shadow.extract(powerManager);
         power.setIsInteractive(true);
+        // The counter asks two subsystems before it charges a minute, so a test has to answer for
+        // both: an interactive power manager over a dark panel is exactly the standby that used to
+        // be charged to the child.
+        panel(Display.STATE_ON);
         tick = GuardService.class.getDeclaredMethod("tick");
         tick.setAccessible(true);
     }
@@ -138,6 +144,43 @@ public class CountdownOverlayTest {
         long addedAfterWake = usedMillis() - before;
         assertTrue("亮屏后只应补上唤醒之后的两秒，实际补了 " + addedAfterWake + "ms",
                 addedAfterWake >= 2000L && addedAfterWake <= GuardService.MAX_COUNTED_TICK_MILLIS);
+    }
+
+    /** The panel witness needs API 20; a KitKat set only ever had the power manager. */
+    @Test
+    @Config(sdk = {24, 33})
+    public void aDarkPanelIsForgivenEvenWhenThePowerManagerStillSaysAwake() throws Exception {
+        createGuard();
+        long before = usedMillis();
+        // Measured on the BRAVIA 4K 2015: standby there holds a Sony thermal wake lock, so the
+        // monotonic clock runs through almost the whole blackout and the uptime defence cannot see
+        // it. Whatever the power manager believes, a television with a dark panel is not being
+        // watched, and its minutes belong to nobody.
+        panel(Display.STATE_OFF);
+        ShadowSystemClock.advanceBy(Duration.ofMinutes(10));
+        tick.invoke(service);
+        assertEquals("面板熄灭的十分钟一分钟都不算", before, usedMillis());
+
+        // The dark minutes stay forgiven after the wake: only the lit seconds that follow count.
+        panel(Display.STATE_ON);
+        ShadowSystemClock.advanceBy(Duration.ofSeconds(2));
+        tick.invoke(service);
+        long added = usedMillis() - before;
+        assertTrue("亮屏后只应补上唤醒之后的两秒，实际补了 " + added + "ms",
+                added >= 2000L && added <= GuardService.MAX_COUNTED_TICK_MILLIS);
+    }
+
+    /** The panel witness needs API 20; a KitKat set only ever had the power manager. */
+    @Test
+    @Config(sdk = {24, 33})
+    public void aDozingPanelIsStandbyRatherThanViewing() throws Exception {
+        createGuard();
+        long before = usedMillis();
+        // A panel handed to doze or to the set's own screensaver is the television idling.
+        panel(Display.STATE_DOZE);
+        ShadowSystemClock.advanceBy(Duration.ofMinutes(10));
+        tick.invoke(service);
+        assertEquals("屏保/doze 的十分钟一分钟都不算", before, usedMillis());
     }
 
     // ------------------------------------------------------------------ corner
@@ -216,6 +259,13 @@ public class CountdownOverlayTest {
         Field field = GuardService.class.getDeclaredField("usedMillis");
         field.setAccessible(true);
         return (Long) field.get(service);
+    }
+
+    /** Answers for the television's display subsystem, the counter's second witness. */
+    private void panel(int state) {
+        WindowManager wm = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
+        ShadowDisplay shadow = Shadow.extract(wm.getDefaultDisplay());
+        shadow.setState(state);
     }
 
     private List<View> attachedViews() {

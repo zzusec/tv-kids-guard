@@ -69,7 +69,7 @@ python3 -I -B -m unittest discover -s tools -p &#x27;test_*.py&#x27; -v</code></
 <h2>Android 4.4 兼容</h2>
 <p>最低版本为 API 19，现代 Android 路径保留。Robolectric 固定为 4.12.2：这是仍支持 API 19 的版本，4.13 起移除了该运行时。</p>
 <ul>
-  <li>亮屏计时在 API 19 使用 <code>PowerManager.isScreenOn()</code>；关屏、待机和锁定时暂停，用量持久化和家长密码规则不变。</li>
+  <li>亮屏计时在 API 19 使用 <code>PowerManager.isScreenOn()</code>；关屏、待机和锁定时暂停，用量持久化和家长密码规则不变。面板状态这一路判据（<code>Display.getState()</code>）自 API 20 才存在，因此 API 19 仍只有电源管理一个判据，2.5.16 的双判据从 API 20 起生效，读不到时一律按「亮着」处理，不会因为接口缺失而冻结当天额度。</li>
   <li>界面提供旧版主题、图形资源和控件样式，不依赖原生 Material、VectorDrawable 或 API 21 的文字与按钮接口。</li>
   <li>API 19 更新使用 AlarmManager 和独立服务；API 21 以上保留 JobScheduler。旧系统启用 TLS 1.2，仍验证主机、证书、APK 签名及版本。</li>
   <li>API 19 通过系统安装器、在有效家长维护授权下确认安装；不继承进程重启前的授权，不清除原有密码或时长数据。</li>
@@ -90,15 +90,25 @@ python3 -I -B -m unittest discover -s tools -p &#x27;test_*.py&#x27; -v</code></
   <li>Lock 默认聚焦「家长管理」按钮，OK 进入家长验证，成功后只打开面板。从该按钮出发，未判定数字键时方向下或右选中图标、按 OK 才展开数字盘；已检测到时屏幕上没有数字盘也没有图标，直接按遥控器数字键即可。在锁屏直接输入正确家长密码同样只打开管理面板：2.5.12 起没有「今天不限时」，锁屏仍在面板之下、离开面板即恢复；选中图标或展开数字盘本身不会解除锁定。</li>
   <li>保留暗色面板、显著的 DPAD 焦点和原有卡片对齐；验证门页与锁屏保留独立主题。隐藏时 Gate/Lock 居中、最大 560dp，<code>PinDialog</code> 恢复最大 560dp 单栏，未判定时这一栏在输入区下方多出一个居中图标；显示数字盘时分别沿用原最大 900dp 与宽屏最大 760dp 布局。隐藏数字盘不留空位，判定变化后重排输入区域，并将焦点保留在可见控件上，不改主面板列宽、间距或卡片布局。</li>
 </ul>
-<p>发布前应检查完整数字键、跨设备拼出完整数字键、缺一字与检测未知时的输入模式，实测数字按键收起数字盘与图标、虚拟与合成按键不学习、旧版 <code>show_keypad</code>/<code>pad_pinned</code> 被清除且不再强制显示数字盘，以及隐藏后的布局与焦点；未判定的电视上还须检查图标是屏幕上唯一的数字输入提示、方向下或右可选中它、OK 才展开数字盘、冷却期间图标与数字盘一起隐藏、换屏后重新回到图标；同时检查两种输入路径、屏幕删除/确认、返回取消、PIN 遮罩、失败冷却、授权失效和锁屏两种入口。2.5.13 删掉切换按钮后没有人工兜底：厂商 keymap 报了 0–9 而遥控器实际没有数字键时，家长只剩实体输入这一条路，这类电视一旦遇到必须在检测上补证据而不是恢复按钮；2.5.14 的图标只补回「按一步拿到数字盘」，不改变这条判定。2.5.15 起还要在实机上检查退后台这条路：面板按返回键和 <code>00</code> 都落到电视机桌面且不再被锁屏抢走，桌面之上没有黑幕；从桌面打开任意应用立刻回到锁屏；孩子在锁屏按 HOME 仍被锁回；待机后再亮屏先看到锁屏；<code>33 立即锁定</code> 与验证页返回照旧锁屏；关掉无障碍后退出面板同样回到锁屏而不是桌面，且这几步都不改变今天已看时长。构建与自动化结果由最终发布验证汇总，不把原生渲染预览当作真机证据。小米电视 2 的 ADB 仍待恢复，不能宣称已通过该电视的实机数字盘验收。</p>
+<p>发布前应检查完整数字键、跨设备拼出完整数字键、缺一字与检测未知时的输入模式，实测数字按键收起数字盘与图标、虚拟与合成按键不学习、旧版 <code>show_keypad</code>/<code>pad_pinned</code> 被清除且不再强制显示数字盘，以及隐藏后的布局与焦点；未判定的电视上还须检查图标是屏幕上唯一的数字输入提示、方向下或右可选中它、OK 才展开数字盘、冷却期间图标与数字盘一起隐藏、换屏后重新回到图标；同时检查两种输入路径、屏幕删除/确认、返回取消、PIN 遮罩、失败冷却、授权失效和锁屏两种入口。2.5.13 删掉切换按钮后没有人工兜底：厂商 keymap 报了 0–9 而遥控器实际没有数字键时，家长只剩实体输入这一条路，这类电视一旦遇到必须在检测上补证据而不是恢复按钮；2.5.14 的图标只补回「按一步拿到数字盘」，不改变这条判定。2.5.16 起还须在实机上确认待机这条路：额度用尽后放着不管，15 秒左右屏幕应当自己熄灭（以前被锁屏按着不放），按遥控器任意键后先看到锁屏；未锁定时按遥控器关机十分钟再开机，右上角「剩余」只该少掉真正看的那几分钟，不能少十分钟；锁屏在面板熄灭期间不得把电视点亮。2.5.15 起还要在实机上检查退后台这条路：面板按返回键和 &lt;code&gt;00&lt;/code&gt; 都落到电视机桌面且不再被锁屏抢走，桌面之上没有黑幕；从桌面打开任意应用立刻回到锁屏；孩子在锁屏按 HOME 仍被锁回；待机后再亮屏先看到锁屏；&lt;code&gt;33 立即锁定&lt;/code&gt; 与验证页返回照旧锁屏；关掉无障碍后退出面板同样回到锁屏而不是桌面，且这几步都不改变今天已看时长。构建与自动化结果由最终发布验证汇总，不把原生渲染预览当作真机证据。小米电视 2 的 ADB 仍待恢复，不能宣称已通过该电视的实机数字盘验收。</p>
 <h2>计时与右上角</h2>
-<p>2.5.10（versionCode 41）处理 Sony BRAVIA 4K 2015 上确认的两件事：待机被算成观看时长，以及「今天不限时」时右上角完全空白。2.5.12（versionCode 43）把「今天不限时」这个状态本身删掉，角标因此只剩倒计时一种形态，待计时规则不变。</p>
+<p>2.5.10（versionCode 41）处理 Sony BRAVIA 4K 2015 上确认的两件事：待机被算成观看时长，以及「今天不限时」时右上角完全空白。2.5.12（versionCode 43）把「今天不限时」这个状态本身删掉，角标因此只剩倒计时一种形态，待计时规则不变。2.5.16（versionCode 47）把「屏幕亮着」这一条判据换成两个部件同时作证，并删掉锁屏的强制保持亮屏。</p>
+<p>Sony 实机采样（只读 <code>dumpsys</code>，每 5–7 秒一次）给出的结论：</p>
 <ul>
-  <li>计时基线是 <code>SystemClock.uptimeMillis()</code>，不是 <code>elapsedRealtime()</code>。后者在深度休眠期间照旧前进，而前台服务的 1 秒 tick 在待机时会被系统停掉，醒来后一次补跑就把整段挂钟差当作观看时长扣进当天额度——Sony BRAVIA 4K 2015 上家长确认电视可以连续数十小时处于待机，并要求待机一律不计入。<code>countedDelta()</code> 同时封顶单个周期的补量（<code>MAX_COUNTED_TICK_MILLIS</code>，4 秒），主线程被卡住、看门狗补跑或服务重启都只会补一个周期。亮屏、灭屏、服务创建和解除锁定四个入口都重新对齐基线，因此熄屏的分钟不会在唤醒那一刻被追溯扣除。</li>
-  <li>额度判定仍是「亮屏且未锁定」，所以关屏、锁屏与待机都不计时；跨到更晚的日历日才由 <code>Prefs.rollOverIfNeeded()</code> 清零，时钟回拨不给免费的额度重置。</li>
+  <li>遥控器 关机 确实会走到框架：<code>Notifier.sendGoToSleepBroadcast</code> → <code>com.sony.dtv.intent.action.PRE_SCREEN_OFF</code> → <code>ACTION_SCREEN_OFF</code>，<code>mWakefulness</code> 由 <code>Awake</code> 变 <code>Asleep</code>，<code>Display Power: state=OFF</code>、<code>mGlobalDisplayState=OFF</code>、<code>screenState</code> 2→0、<code>interactiveState</code> 1→0，且切换发生在一次采样之内（无中间态）。这一段本来就不计入当天额度。</li>
+  <li>同一段 77 分钟待机里 <code>uptimeMillis</code> 前进了 69 分钟——Sony 在待机中持有 <code>PARTIAL_WAKE_LOCK 'heat_control'</code> 与 <code>'WebApiWakeLock'</code>，SoC 不 suspend，所以 2.5.10 的「靠开机时长识别待机」在这台机器上几乎不起作用，只有面板状态可靠。</li>
+  <li>采样期间锁屏窗口是整机唯一的 <code>SCREEN_BRIGHT_WAKE_LOCK</code> 持有者、也是唯一的 <code>mHoldScreenWindow</code>；本机 <code>mScreenOffTimeoutSetting=15000</code>（15 秒），也就是说只要锁屏在屏幕上，框架的熄屏超时永远不会生效，电视不会自己进入待机。锁屏因此不再持有 <code>FLAG_KEEP_SCREEN_ON</code>，只保留 <code>TURN_SCREEN_ON</code>；<code>LockActivity.launch()</code> 在面板不亮时直接返回，唤醒后由 <code>ACTION_SCREEN_ON</code> 重新主张锁屏。</li>
+  <li>同一段待机的前后，前台窗口、输入设备列表与 <code>screen_brightness</code> 都没有变化，不能当判据；面板状态（<code>Display.getState()</code>，与 <code>dumpsys display</code> 的 <code>mState</code> 同源）是目前实测唯一会随待机改变的第二个信号。</li>
+</ul>
+<p>据此，2.5.16 的计时与锁屏口径是：</p>
+
+<ul>
+  <li>计时基线是 <code>SystemClock.uptimeMillis()</code>，不是 <code>elapsedRealtime()</code>。后者在休眠期间照旧前进，而一次补跑的 tick 会把整段挂钟差当作观看时长扣进当天额度——Sony BRAVIA 4K 2015 上家长确认电视可以连续数十小时处于待机，并要求待机一律不计入。2.5.16 的实机采样给这条防线加了限定：本机的 <code>uptimeMillis</code> 在待机里照样前进（77 分钟待机走了 69 分钟，Sony 的 <code>heat_control</code> 与 <code>WebApiWakeLock</code> 让 SoC 不 suspend），所以时钟只能算「设备真 suspend 时的第二重保护」，把待机挡在外面的是面板状态。<code>countedDelta()</code> 同时封顶单个周期的补量（<code>MAX_COUNTED_TICK_MILLIS</code>，4 秒），主线程被卡住、看门狗补跑或服务重启都只会补一个周期。亮屏、灭屏、服务创建和解除锁定四个入口都重新对齐基线，因此熄屏的分钟不会在唤醒那一刻被追溯扣除。</li>
+  <li>额度判定是「面板亮着且未锁定」，2.5.16 起由 <code>PanelState.isLit()</code> 回答：<code>PowerManager.isInteractive()</code>（API 19 用 <code>isScreenOn()</code>）与 <code>Display.getState() == STATE_ON</code> 两个判据同时成立才算，任一不成立即视为待机，doze 与屏保也算待机。锁屏、<code>LockActivity.launch()</code> 与计时共用这一个判据，避免出现两套「屏幕亮不亮」的口径。</li>
+  <li>关屏、锁屏与待机都不计时；跨到更晚的日历日才由 <code>Prefs.rollOverIfNeeded()</code> 清零，时钟回拨不给免费的额度重置。</li>
   <li>右上角角标由 <code>GuardService</code> 持有：未锁定时 <code>updateCountdown()</code> 显示「剩余 MM:SS」，最后 5 分钟转红。2.5.10 曾在这天被家长密码解锁时把同一枚角标换成琥珀色「今天不限时」（<code>showUnlimitedNotice()</code>）并与面板的 <code>today_override</code> 提示对齐；2.5.12 把这一状态、这段提示和那一行标记一起删除——家长密码不再买时间，角标就只剩下倒计时一种形态，也不会再出现空白角标被孩子读成「防护已关」的情形。锁定态不显示角标，只有全屏黑幕与锁屏 Activity。</li>
   <li>悬浮窗权限缺失时不贴角标（API 23 起 <code>Settings.canDrawOverlays</code>），面板另有「倒计时未开启：需允许悬浮窗权限」警告；API 19/20 由清单权限决定，不存在运行时撤销。</li>
-  <li><code>CountdownOverlayTest</code> 在 API 19/24/33 断言：模拟一小时深度休眠后 tick 不增加当天时长；tick 被饿 20 分钟后最多补 4 秒；熄屏十分钟不扣、唤醒后只从亮屏那刻开始计；未锁定时窗口里恰有一枚文本角标、文字以「剩余 」开头且额度接近 30 分钟减去已看时间，反复 tick 不叠加；面板给出 10 分钟临时加时后同一枚角标的剩余正好多出 600 秒；无悬浮窗权限时不贴任何窗口；额度耗尽时进入锁定且没有倒计时角标。<code>PrefsAuthTest</code> 另断言旧版写下的 <code>unlocked_today</code> 在升级后第一次构造 <code>Prefs</code> 时被删除，且删除后时长锁重新生效。</li>
+  <li><code>CountdownOverlayTest</code> 在 API 19/24/33 断言：模拟一小时深度休眠后 tick 不增加当天时长；tick 被饿 20 分钟后最多补 4 秒；熄屏十分钟不扣、唤醒后只从亮屏那刻开始计；未锁定时窗口里恰有一枚文本角标、文字以「剩余 」开头且额度接近 30 分钟减去已看时间，反复 tick 不叠加；面板给出 10 分钟临时加时后同一枚角标的剩余正好多出 600 秒；无悬浮窗权限时不贴任何窗口；额度耗尽时进入锁定且没有倒计时角标。2.5.16 另在 API 24/33 断言：电源管理仍报 <code>Awake</code> 而面板报 <code>STATE_OFF</code> 的十分钟一分钟都不算、回到 <code>STATE_ON</code> 后只补唤醒之后的两秒；面板报 <code>STATE_DOZE</code> 的十分钟同样不算（若第二判据失效，tick 会补满 4 秒封顶量，这两条断言必然失败）。<code>OnScreenLockTest</code> 断言锁屏窗口不再持有 <code>FLAG_KEEP_SCREEN_ON</code>、仍持有 <code>FLAG_TURN_SCREEN_ON</code>，且面板熄灭时 <code>LockActivity.launch()</code> 不启动锁屏、面板点亮后仍会启动。<code>PrefsAuthTest</code> 另断言旧版写下的 <code>unlocked_today</code> 在升级后的第一次构造 <code>Prefs</code> 时被删除，且删除后时长锁重新生效。</li>
 </ul>
 <h2>设置入口保护与恢复</h2>
 <p>2.5.9（versionCode 40）以普通应用恢复原有密码拦截为目标，不要求系统预装、root 或 Device Owner：每次进入设置页都要求家长密码，同时消除「输入密码后再次要求输入密码」的验证死循环。<code>MainActivity.requireParent()</code> 保护图标入口，<code>GuardService</code> / <code>LockActivity</code> 保持额度锁定，<code>AppLockService</code> 保护已识别的设置及卸载页面；三条路径分别验收，不能把图标有密码等同于系统设置受保护。</p>

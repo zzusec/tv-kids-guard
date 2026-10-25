@@ -287,16 +287,22 @@ public class GuardService extends Service {
         prefs.setUsedSeconds(usedMillis / 1000L);
     }
 
-    @SuppressWarnings("deprecation")
+    /**
+     * Watching time is only what happens in front of a lit panel. The power manager alone was not
+     * enough: it can keep believing the screen is on while the panel is dark, dozing, or handed to
+     * a screensaver, and this television's Sony thermal wake lock means the monotonic clock runs
+     * through standby as well. See {@link PanelState}.
+     */
     private boolean isScreenOn() {
-        return powerManager != null && (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH
-                ? powerManager.isInteractive() : powerManager.isScreenOn());
+        return PanelState.isLit(this, powerManager, wm);
     }
 
     /**
      * Milliseconds of watching since the previous tick. The baseline is {@code uptimeMillis}, which
-     * does not advance while the television is suspended, so standby never counts; the ceiling keeps
-     * a starved or replayed tick from dumping a long gap into the day's counter.
+     * freezes on devices that really suspend, so a standby that starves the ticker cannot be charged
+     * twice; it is not frozen on every set (the BRAVIA 4K 2015 keeps it running through standby), so
+     * the panel witness in {@link #isScreenOn()} is what actually keeps standby out, and the ceiling
+     * keeps a starved or replayed tick from dumping a long gap into the day's counter.
      */
     private long countedDelta(long nowUptime) {
         long delta = nowUptime - lastTickUptime;
