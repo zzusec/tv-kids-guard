@@ -63,16 +63,24 @@ public class RemoteAuthTest {
     }
 
     @Test
-    public void pinSurfacesHaveAnOnScreenPadWithoutAnImeBackedField() {
+    public void pinSurfacesKeepThePadBehindAnIconWithoutAnImeBackedField() {
         prefs.setPassword("135790");
         AdminAuthActivity activity = startAuth();
         assertRemoteOnlyInput(activity.findViewById(android.R.id.content));
         assertNumericPad(activity.findViewById(android.R.id.content));
+        assertTrue("An unproven remote gets the icon",
+                ScreenRemote.offersIcon(activity));
+        assertFalse("and the pad only after the icon is pressed",
+                ScreenRemote.padIsOpen(activity));
 
         List<String> values = new ArrayList<>();
         showDialog(true, 6, values);
         assertRemoteOnlyInput(dialog.getWindow().getDecorView());
         assertNumericPad(dialog.getWindow().getDecorView());
+        View dialogRoot = dialog.getWindow().getDecorView();
+        assertTrue("The dialog offers the same icon",
+                dialogRoot.findViewWithTag("keypad_request").isShown());
+        assertFalse(dialogRoot.findViewWithTag("key_1").isShown());
         virtualDigits(dialog, "13579");
         assertEquals("●●●●●", dialogInput());
         assertTrue(values.isEmpty());
@@ -237,6 +245,7 @@ public class RemoteAuthTest {
     public void virtualOkAliasesActivateOnceOnReleaseAndIgnoreLongPressRepeats() {
         List<String> values = new ArrayList<>();
         showDialog(false, 8, values);
+        openVirtualPad(dialog);
         for (int code : new int[] {KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
                 KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_BUTTON_A,
                 KeyEvent.KEYCODE_BUTTON_SELECT}) {
@@ -256,6 +265,7 @@ public class RemoteAuthTest {
     public void canceledOrInterruptedVirtualOkCannotTypeADigit() {
         List<String> values = new ArrayList<>();
         showDialog(false, 4, values);
+        openVirtualPad(dialog);
         send(dialog, new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_CENTER));
         send(dialog, new KeyEvent(0, 0, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_CENTER,
                 0, 0, 0, 0, KeyEvent.FLAG_CANCELED));
@@ -402,20 +412,39 @@ public class RemoteAuthTest {
     }
 
     private void virtualDigits(Window.Callback target, String value) {
+        View root = windowOf(target).getDecorView();
+        if (!root.findViewWithTag("key_1").isShown()) openVirtualPad(target);
         press(target, KeyEvent.KEYCODE_DPAD_UP);
-        Window window = target instanceof PinDialog ? ((PinDialog) target).getWindow()
-                : ((AdminAuthActivity) target).getWindow();
-        assertTrue("A numberless remote is given the pad without asking for it",
-                window.getDecorView().findViewWithTag("key_1").isShown());
         for (char digit : value.toCharArray()) {
             focusKey(target, String.valueOf(digit));
             press(target, KeyEvent.KEYCODE_DPAD_CENTER);
         }
     }
 
-    private void focusKey(Window.Callback target, String suffix) {
-        Window window = target instanceof PinDialog ? ((PinDialog) target).getWindow()
+    /**
+     * The pad is no longer handed to a remote whose digits the hardware cannot prove: an icon offers
+     * it, so a direction-only drive of the pad starts with the two presses that open it.
+     */
+    private void openVirtualPad(Window.Callback target) {
+        View root = windowOf(target).getDecorView();
+        View request = root.findViewWithTag("keypad_request");
+        assertNotNull("An unproven remote is offered a number-pad icon", request);
+        assertTrue("The icon, not a grid, is what a numberless remote sees", request.isShown());
+        assertFalse(root.findViewWithTag("key_1").isShown());
+        press(target, KeyEvent.KEYCODE_DPAD_DOWN);
+        assertEquals("keypad_request", root.findFocus().getTag());
+        press(target, KeyEvent.KEYCODE_DPAD_CENTER);
+        assertTrue("OK on the icon opens the pad", root.findViewWithTag("key_1").isShown());
+        assertFalse("The pad takes the icon's place", request.isShown());
+    }
+
+    private Window windowOf(Window.Callback target) {
+        return target instanceof PinDialog ? ((PinDialog) target).getWindow()
                 : ((AdminAuthActivity) target).getWindow();
+    }
+
+    private void focusKey(Window.Callback target, String suffix) {
+        Window window = windowOf(target);
         View wanted = window.getDecorView().findViewWithTag("key_" + suffix);
         assertNotNull(wanted);
         View focused = window.getDecorView().findFocus();

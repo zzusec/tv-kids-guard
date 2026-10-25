@@ -114,6 +114,12 @@ public class LockActivity extends Activity {
         ((FrameLayout) findViewById(R.id.keypad_host)).addView(keypad);
         inputMode = new RemoteInputMode(this, parentButton, keypad, this::configureInputLayout);
         keypad.setUpperFocusTarget(parentButton);
+        LinearLayout.LayoutParams icon = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, Math.round(48 * getResources()
+                .getDisplayMetrics().density));
+        icon.topMargin = Math.round(12 * getResources().getDisplayMetrics().density);
+        icon.gravity = Gravity.CENTER_HORIZONTAL;
+        ((LinearLayout) findViewById(R.id.entry_copy)).addView(inputMode.requestButton(), icon);
         configureInputLayout();
         parentButton.requestFocus();
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN
@@ -328,6 +334,7 @@ public class LockActivity extends Activity {
             return true;
         }
         if (!RemoteKeypad.isSelectKey(code)) cancelParentSelect();
+        if (inputMode.handleKeyEvent(event)) return true;
         if (parentButton.hasFocus()) {
             if (code == KeyEvent.KEYCODE_DPAD_DOWN || code == KeyEvent.KEYCODE_DPAD_RIGHT) {
                 if (event.getAction() == KeyEvent.ACTION_DOWN && keypad.isEnabled()) {
@@ -423,6 +430,7 @@ public class LockActivity extends Activity {
         boolean canInput = service != null && prefs.lockoutRemainingSeconds() == 0L;
         keypad.setEnabled(canInput);
         if (!canInput && !parentButton.hasFocus()) parentButton.requestFocus();
+        inputMode.syncRequestVisibility();
         if (service == null) {
             promptView.setText("正在恢复服务…");
             inputView.setText("");

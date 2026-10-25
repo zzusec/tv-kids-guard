@@ -62,14 +62,20 @@ public class OnScreenLockTest {
     }
 
     @Test
-    public void parentFocusAndPadHaveExplicitRoundTripNavigation() {
+    public void parentEntryIconAndPadHaveExplicitRoundTripNavigation() {
         assertEquals("parent_manage", activity.getWindow().getDecorView().findFocus().getTag());
+        assertTrue("A remote with unproven digits is offered the icon instead of the pad",
+                ScreenRemote.offersIcon(activity));
         ScreenRemote.press(activity, KeyEvent.KEYCODE_DPAD_DOWN);
-        assertEquals("key_1", activity.getWindow().getDecorView().findFocus().getTag());
+        assertEquals("keypad_request", activity.getWindow().getDecorView().findFocus().getTag());
         ScreenRemote.press(activity, KeyEvent.KEYCODE_DPAD_UP);
         assertEquals("parent_manage", activity.getWindow().getDecorView().findFocus().getTag());
         ScreenRemote.press(activity, KeyEvent.KEYCODE_DPAD_RIGHT);
+        assertEquals("keypad_request", activity.getWindow().getDecorView().findFocus().getTag());
+        ScreenRemote.openPad(activity);
         assertEquals("key_1", activity.getWindow().getDecorView().findFocus().getTag());
+        ScreenRemote.press(activity, KeyEvent.KEYCODE_DPAD_UP);
+        assertEquals("parent_manage", activity.getWindow().getDecorView().findFocus().getTag());
         assertLocked();
         assertFalse(AdminSession.isActive());
         assertNull(shadowOf(activity).getNextStartedActivity());

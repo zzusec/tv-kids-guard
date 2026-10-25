@@ -2,8 +2,14 @@ package com.family.tvguard;
 
 import android.content.Context;
 import android.content.res.ColorStateList;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.ColorFilter;
+import android.graphics.Paint;
+import android.graphics.PixelFormat;
+import android.graphics.Rect;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.text.SpannableString;
 import android.text.Spanned;
@@ -188,6 +194,90 @@ public final class RemoteKeypad {
             armedButton = null;
             armedSelectKey = 0;
         }
+    }
+
+    /**
+     * The small number-pad icon offered when no device could prove the remote types digits. It is
+     * an icon and nothing else: a dot grid on the same dark button as the pad keys, so a television
+     * that cannot be judged still shows one clean input area instead of a grid nobody asked for.
+     */
+    static Button padRequestButton(Context context) {
+        Button icon = new Button(context);
+        int ink = context.getResources().getColor(R.color.panel_ink);
+        icon.setTag("keypad_request");
+        icon.setContentDescription("屏幕数字键盘");
+        icon.setText("");
+        icon.setAllCaps(false);
+        icon.setGravity(Gravity.CENTER);
+        icon.setBackgroundResource(R.drawable.parent_button_bg);
+        icon.setTextColor(actionColors(ink, Color.WHITE));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            icon.setBackgroundTintList(null);
+            icon.setStateListAnimator(null);
+        }
+        KeypadGlyph glyph = new KeypadGlyph(ink, Color.WHITE, dp(context, 26));
+        icon.setCompoundDrawablesWithIntrinsicBounds(null, glyph, null, null);
+        icon.setCompoundDrawablePadding(0);
+        icon.setFocusable(true);
+        icon.setFocusableInTouchMode(true);
+        icon.setMinWidth(dp(context, 64));
+        icon.setMinimumWidth(dp(context, 64));
+        icon.setMinHeight(dp(context, 48));
+        icon.setMinimumHeight(dp(context, 48));
+        icon.setIncludeFontPadding(false);
+        icon.setPadding(dp(context, 10), dp(context, 6), dp(context, 10), dp(context, 6));
+        return icon;
+    }
+
+    /** Three-by-three dot grid, lit white under the focus and press states of its button. */
+    static final class KeypadGlyph extends Drawable {
+        private final Paint dots = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final int normal;
+        private final int selected;
+        private final int size;
+        private boolean lit;
+
+        KeypadGlyph(int normal, int selected, int size) {
+            this.normal = normal;
+            this.selected = selected;
+            this.size = size;
+            setBounds(0, 0, size, size);
+        }
+
+        @Override protected boolean onStateChange(int[] state) {
+            boolean next = false;
+            for (int entry : state) {
+                if (entry == android.R.attr.state_focused || entry == android.R.attr.state_pressed) {
+                    next = true;
+                }
+            }
+            if (next == lit) return false;
+            lit = next;
+            invalidateSelf();
+            return true;
+        }
+
+        @Override public void draw(Canvas canvas) {
+            Rect box = getBounds();
+            float cell = box.width() / 3f;
+            dots.setColor(lit ? selected : normal);
+            for (int row = 0; row < 3; row++) {
+                for (int column = 0; column < 3; column++) {
+                    canvas.drawCircle(box.left + cell * (column + .5f), box.top + cell * (row + .5f),
+                            Math.max(1f, cell * .19f), dots);
+                }
+            }
+        }
+
+        @Override public int getIntrinsicWidth() { return size; }
+
+        @Override public int getIntrinsicHeight() { return size; }
+
+        @Override public void setAlpha(int alpha) { dots.setAlpha(alpha); }
+
+        @Override public void setColorFilter(ColorFilter colorFilter) { dots.setColorFilter(colorFilter); }
+
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
     }
 
     /** Native Preline-style action: remote shortcut and title. */

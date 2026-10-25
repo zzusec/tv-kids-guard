@@ -55,6 +55,10 @@ public class OnScreenGateTest {
     public void directionsEditMaskedInputAndPartialConfirmDoesNotAuthenticate() {
         prefs.setPassword("135790");
         startGate();
+        assertTrue("A remote with unproven digits is offered the icon, not the pad",
+                ScreenRemote.offersIcon(activity));
+        assertFalse(ScreenRemote.padIsOpen(activity));
+        ScreenRemote.openPad(activity);
         assertEquals("key_1", activity.getWindow().getDecorView().findFocus().getTag());
         ScreenRemote.digits(activity, "13");
         assertEquals("●●", input());
@@ -71,6 +75,7 @@ public class OnScreenGateTest {
     public void virtualOkActivatesOnReleaseOnlyAndRejectsCanceledPresses() {
         prefs.setPassword("135790");
         startGate();
+        ScreenRemote.openPad(activity);
         ScreenRemote.send(activity, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_CENTER, 0, 0);
         assertEquals("", input());
         ScreenRemote.send(activity, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_CENTER, 2, 0);
@@ -198,13 +203,13 @@ final class ScreenRemote {
     }
 
     static void focus(Activity activity, String suffix) {
-        View focused = activity.getWindow().getDecorView().findFocus();
-        assertNotNull("Remote entry requires an initial focus", focused);
-        assertTrue("A numberless remote gets the pad by itself, with no switch to press",
-                activity.getWindow().getDecorView().findViewWithTag("key_1").isShown());
+        View decor = activity.getWindow().getDecorView();
+        assertNotNull("Remote entry requires an initial focus", decor.findFocus());
+        if (!decor.findViewWithTag("key_1").isShown()) openPad(activity);
+        View focused = decor.findFocus();
         if ("parent_manage".equals(focused.getTag())) {
             press(activity, KeyEvent.KEYCODE_DPAD_DOWN);
-            focused = activity.getWindow().getDecorView().findFocus();
+            focused = decor.findFocus();
         }
         int from = index(focused.getTag().toString());
         int target = index("key_" + suffix);
@@ -218,7 +223,37 @@ final class ScreenRemote {
             press(activity, col < target % 3 ? KeyEvent.KEYCODE_DPAD_RIGHT : KeyEvent.KEYCODE_DPAD_LEFT);
             col += col < target % 3 ? 1 : -1;
         }
-        assertEquals("key_" + suffix, activity.getWindow().getDecorView().findFocus().getTag());
+        assertEquals("key_" + suffix, decor.findFocus().getTag());
+    }
+
+    /**
+     * The pad is no longer handed to a remote whose digits the hardware cannot prove. It is offered
+     * by an icon, so every remote drive of the pad starts here: one DOWN from the entry reaches the
+     * icon, OK opens the pad, and the icon is gone while the pad is up.
+     */
+    static void openPad(Activity activity) {
+        View decor = activity.getWindow().getDecorView();
+        View request = decor.findViewWithTag("keypad_request");
+        assertNotNull("An unproven remote is offered a number-pad icon", request);
+        assertTrue("The icon shows before any pad", request.isShown());
+        assertFalse(decor.findViewWithTag("key_1").isShown());
+        if (!request.hasFocus()) {
+            press(activity, KeyEvent.KEYCODE_DPAD_DOWN);
+            assertEquals("keypad_request", decor.findFocus().getTag());
+        }
+        press(activity, KeyEvent.KEYCODE_DPAD_CENTER);
+        assertTrue("OK on the icon opens the pad", decor.findViewWithTag("key_1").isShown());
+        assertFalse("The pad takes the icon's place", request.isShown());
+        assertEquals("key_1", decor.findFocus().getTag());
+    }
+
+    static boolean padIsOpen(Activity activity) {
+        return activity.getWindow().getDecorView().findViewWithTag("key_1").isShown();
+    }
+
+    static boolean offersIcon(Activity activity) {
+        View request = activity.getWindow().getDecorView().findViewWithTag("keypad_request");
+        return request != null && request.isShown();
     }
 
     static void assertKeysEnabled(Activity activity, boolean enabled) {

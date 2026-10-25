@@ -104,6 +104,7 @@ public class NumericEntryVisualTest {
         capture(gate, "keypad-gate-" + size);
         assertInputControls(gate);
         assertFullyVisible(gate.findViewById(R.id.lock_input));
+        captureOpenedPad(gate, "pad-gate-" + size);
         controller.pause().stop().destroy();
         controller = null;
 
@@ -118,6 +119,7 @@ public class NumericEntryVisualTest {
         assertInputControls(lock);
         assertFullyVisible(lock.findViewById(R.id.lock_input));
         capture(lock, "keypad-lock-" + size);
+        captureOpenedPad(lock, "pad-lock-" + size);
         controller.pause().stop().destroy();
         controller = null;
         service.destroy();
@@ -132,22 +134,39 @@ public class NumericEntryVisualTest {
             View surface = dialog.getWindow().getDecorView();
             assertInputControls(surface);
             assertFullyVisible(ReflectionHelpers.getField(dialog, "inputView"));
-            capture(surface, "keypad-" + (password ? "pin" : "duration") + "-" + size);
+            String kind = password ? "pin" : "duration";
+            capture(surface, "keypad-" + kind + "-" + size);
+            captureOpenedPad(surface, "pad-" + kind + "-" + size);
             dialog.dismiss();
             dialog = null;
         }
     }
 
+    /** What the hardware decides: no grid and no icon for a remote that can type, one icon for one
+     * that cannot be proven. */
     private void assertInputControls(View root) {
         assertNull("2.5.13 removed the manual input switch",
                 root.findViewWithTag("keypad_toggle"));
-        if (physicalRemote) {
-            assertEquals(View.GONE, root.findViewWithTag("numeric_keypad").getVisibility());
-        } else {
-            assertEquals("A remote that cannot report 0-9 must be given the pad", View.VISIBLE,
-                    root.findViewWithTag("numeric_keypad").getVisibility());
-            assertPadVisible(root);
+        View request = root.findViewWithTag("keypad_request");
+        assertNotNull("the icon is built with every entry screen", request);
+        assertEquals(View.GONE, root.findViewWithTag("numeric_keypad").getVisibility());
+        assertEquals(physicalRemote ? View.GONE : View.VISIBLE, request.getVisibility());
+        if (!physicalRemote) {
+            assertFullyVisible(request);
+            assertTrue("A remote must be able to hit the icon", request.getHeight() >= 48);
         }
+    }
+
+    /** The opened pad, captured for the remote the hardware could not prove. */
+    private void captureOpenedPad(View root, String name) throws Exception {
+        if (physicalRemote) return;
+        root.findViewWithTag("keypad_request").performClick();
+        ShadowLooper.idleMainLooper();
+        assertEquals("OK on the icon opens the pad", View.VISIBLE,
+                root.findViewWithTag("numeric_keypad").getVisibility());
+        assertEquals(View.GONE, root.findViewWithTag("keypad_request").getVisibility());
+        assertPadVisible(root);
+        capture(root, name);
     }
 
     private void assertPadVisible(View root) {

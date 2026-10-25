@@ -66,10 +66,10 @@ public class RemoteInputModeTest {
     }
 
     @Test
-    public void absentUnknownAndDisconnectedDevicesDefaultToShowingThePad() {
+    public void absentUnknownAndDisconnectedDevicesOfferTheIconInsteadOfThePad() {
         assertFalse(RemoteInputMode.hasPhysicalDigits());
         createControl();
-        assertMode(true);
+        assertUnproven();
         assertFalse(remotePrefs.contains("show_keypad"));
 
         DigitInputDevice.devices.put(91, null);
@@ -77,18 +77,18 @@ public class RemoteInputModeTest {
         DigitInputDevice.add(false, 0, digits(KeyEvent.KEYCODE_0, 0, 10));
         assertFalse(RemoteInputMode.hasPhysicalDigits());
         createControl();
-        assertMode(true);
+        assertUnproven();
     }
 
     @Test
-    public void virtualDevicesNeverSuppressThePadEvenWithAllNumberKeys() {
+    public void virtualDevicesWithEveryNumberKeyStillProveNothing() {
         DigitInputDevice.add(true, InputDevice.SOURCE_KEYBOARD,
                 digits(KeyEvent.KEYCODE_0, 0, 10));
         DigitInputDevice.add(true, InputDevice.SOURCE_DPAD,
                 digits(KeyEvent.KEYCODE_NUMPAD_0, 0, 10));
         assertFalse(RemoteInputMode.hasPhysicalDigits());
         createControl();
-        assertMode(true);
+        assertUnproven();
     }
 
     @Test
@@ -99,7 +99,7 @@ public class RemoteInputModeTest {
         }
         assertFalse(RemoteInputMode.hasPhysicalDigits());
         createControl();
-        assertMode(true);
+        assertUnproven();
     }
 
     @Test
@@ -109,7 +109,7 @@ public class RemoteInputModeTest {
             DigitInputDevice.add(false, sources, digits(KeyEvent.KEYCODE_0, 0, 10));
             assertTrue(RemoteInputMode.hasPhysicalDigits());
             createControl();
-            assertMode(false);
+            assertProven();
             assertTrue(primary.hasFocus());
             assertFalse(remotePrefs.contains("show_keypad"));
         }
@@ -132,7 +132,7 @@ public class RemoteInputModeTest {
         System.arraycopy(digits(KeyEvent.KEYCODE_NUMPAD_0, 0, 10), 0, expected, 10, 10);
         assertArrayEquals(expected, mixed.lastQuery);
         createControl();
-        assertMode(false);
+        assertProven();
     }
 
     @Test
@@ -146,7 +146,7 @@ public class RemoteInputModeTest {
         assertEquals(1, first.queries);
         assertEquals(1, second.queries);
         createControl();
-        assertMode(false);
+        assertProven();
         assertTrue(primary.hasFocus());
     }
 
@@ -163,14 +163,14 @@ public class RemoteInputModeTest {
     }
 
     @Test
-    public void aUnionStillMissingOneDigitLeavesThePadUp() {
+    public void aUnionStillMissingOneDigitKeepsThePadBehindTheIcon() {
         DigitInputDevice.add(false, InputDevice.SOURCE_KEYBOARD,
                 digits(KeyEvent.KEYCODE_0, 0, 5));
         DigitInputDevice.add(false, InputDevice.SOURCE_DPAD,
                 digits(KeyEvent.KEYCODE_NUMPAD_0, 5, 9));
         assertFalse(RemoteInputMode.hasPhysicalDigits());
         createControl();
-        assertMode(true);
+        assertUnproven();
     }
 
     @Test
@@ -184,7 +184,7 @@ public class RemoteInputModeTest {
             assertFalse("Malformed capability length " + length,
                     RemoteInputMode.hasPhysicalDigits());
             createControl();
-            assertMode(true);
+            assertUnproven();
         }
     }
 
@@ -195,7 +195,7 @@ public class RemoteInputModeTest {
         assertTrue(remotePrefs.edit().putBoolean("show_keypad", true)
                 .putBoolean("pad_pinned", true).commit());
         createControl();
-        assertMode(false);
+        assertProven();
         assertFalse("The removed switch must not leave a stored choice behind",
                 remotePrefs.contains("show_keypad"));
         assertFalse(remotePrefs.contains("pad_pinned"));
@@ -206,51 +206,110 @@ public class RemoteInputModeTest {
         DigitInputDevice.add(false, InputDevice.SOURCE_DPAD,
                 digits(KeyEvent.KEYCODE_0, 0, 10));
         createControl();
-        assertMode(false);
+        assertProven();
         for (int code : new int[] {KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
                 KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT}) {
             press(code);
             press(code);
         }
-        assertMode(false);
+        assertProven();
         assertEquals(0, changes);
         assertEquals(0, padActions);
         assertNull("The 2.5.12 switch button is gone", findToggle());
+        assertFalse("A digit remote never reaches the icon", mode.requestButton().hasFocus());
     }
 
     @Test
-    public void aDigitFromARealDeviceRetiresThePadEvenWhenItsKeyMapDeniedDigits() {
+    public void theIconOpensThePadOnlyForTheScreenThatPressedIt() {
+        createControl();
+        assertUnproven();
+        openPad();
+        createControl();
+        assertTrue("A new screen starts behind the icon again",
+                mode.requestButton().isShown());
+        assertUnproven();
+    }
+
+    @Test
+    public void aProvenRemoteCannotBringUpThePadEvenThroughTheIcon() {
+        DigitInputDevice.add(false, InputDevice.SOURCE_KEYBOARD,
+                digits(KeyEvent.KEYCODE_0, 0, 10));
+        createControl();
+        assertProven();
+        mode.requestButton().performClick();
+        assertFalse(mode.usesOnScreen());
+        assertEquals(View.GONE, keypad.getVisibility());
+        assertEquals(0, changes);
+        assertEquals(0, padActions);
+    }
+
+    @Test
+    public void aDisabledPadTakesItsIconAwayUntilItCanTakeInputAgain() {
+        createControl();
+        assertUnproven();
+        keypad.setEnabled(false);
+        mode.syncRequestVisibility();
+        assertFalse("A pad that cannot be used is not offered", mode.showsRequest());
+        assertEquals(View.GONE, mode.requestButton().getVisibility());
+        press(KeyEvent.KEYCODE_DPAD_DOWN);
+        assertFalse("A hidden icon cannot be reached", mode.requestButton().hasFocus());
+        mode.requestButton().performClick();
+        assertFalse(mode.usesOnScreen());
+        keypad.setEnabled(true);
+        mode.syncRequestVisibility();
+        assertUnproven();
+        openPad();
+    }
+
+    @Test
+    public void aHeldOrCanceledIconPressDoesNotOpenThePad() {
+        createControl();
+        assertUnproven();
+        press(KeyEvent.KEYCODE_DPAD_DOWN);
+        assertEquals("keypad_request", focusedTag());
+        send(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_CENTER, 0, 0);
+        assertFalse("The pad opens on release, not on touch", mode.usesOnScreen());
+        send(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_CENTER, 2, 0);
+        assertFalse(mode.usesOnScreen());
+        send(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_CENTER, 0, KeyEvent.FLAG_CANCELED);
+        assertFalse("A canceled press is not a choice", mode.usesOnScreen());
+        press(KeyEvent.KEYCODE_DPAD_CENTER);
+        assertPadOpen();
+    }
+
+    @Test
+    public void aDigitFromARealDeviceRetiresThePadAndItsIconEvenWhenItsKeyMapDeniedDigits() {
         DigitInputDevice remote = DigitInputDevice.add(false, InputDevice.SOURCE_DPAD,
                 digits(KeyEvent.KEYCODE_0, 0, 5));
         assertFalse("A five-digit map cannot suppress the pad", RemoteInputMode.hasPhysicalDigits());
         createControl();
-        assertMode(true);
+        assertUnproven();
 
         physicalDigit(remote.id, KeyEvent.KEYCODE_7);
-        assertMode(false);
+        assertProven();
         assertTrue(primary.hasFocus());
         assertEquals(1, changes);
         assertTrue(remotePrefs.getBoolean("physical_digits_seen", false));
 
         createControl();
-        assertMode(false);
+        assertProven();
         assertTrue(primary.hasFocus());
     }
 
     @Test
     public void syntheticAndVirtualDigitsTeachNothing() {
         createControl();
-        assertMode(true);
+        assertUnproven();
 
         physicalDigit(-1, KeyEvent.KEYCODE_7);
-        assertMode(true);
+        assertUnproven();
         assertEquals(0, changes);
         assertFalse(remotePrefs.contains("physical_digits_seen"));
 
         DigitInputDevice virtual = DigitInputDevice.add(true, InputDevice.SOURCE_KEYBOARD,
                 digits(KeyEvent.KEYCODE_0, 0, 10));
         physicalDigit(virtual.id, KeyEvent.KEYCODE_7);
-        assertMode(true);
+        assertUnproven();
         assertEquals(0, changes);
         assertFalse("A virtual device proves nothing about the remote",
                 remotePrefs.contains("physical_digits_seen"));
@@ -266,9 +325,9 @@ public class RemoteInputModeTest {
         DigitInputDevice remote = DigitInputDevice.add(false, InputDevice.SOURCE_DPAD,
                 digits(KeyEvent.KEYCODE_0, 0, 4));
         createControl();
-        assertMode(true);
+        assertUnproven();
         physicalDigit(remote.id, KeyEvent.KEYCODE_NUMPAD_7);
-        assertMode(false);
+        assertProven();
         assertEquals(before, context.getSharedPreferences("tvguard_prefs", Context.MODE_PRIVATE)
                 .getAll());
         assertFalse(AdminSession.isActive());
@@ -285,7 +344,9 @@ public class RemoteInputModeTest {
                 .getSharedPreferences("tvguard_prefs", Context.MODE_PRIVATE).getAll());
         assertFalse(AdminSession.isActive());
         createControl();
-        assertMode(true);
+        assertUnproven();
+        openPad();
+        assertEquals("opening the pad is the one layout change", 1, changes);
         assertTrue("The pad keeps navigation keys while it is up",
                 send(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_UP, 0, 0));
         send(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_UP, 0, 0);
@@ -293,8 +354,8 @@ public class RemoteInputModeTest {
         press(KeyEvent.KEYCODE_DPAD_DOWN);
         assertEquals("key_4", focusedTag());
         press(KeyEvent.KEYCODE_DPAD_CENTER);
-        assertMode(true);
-        assertEquals(0, changes);
+        assertPadOpen();
+        assertEquals(1, changes);
         assertEquals("one pad key press reaches the screen", 1, padActions);
         assertEquals("1234", primary.getText().toString());
         assertEquals(before, context.getSharedPreferences("tvguard_prefs", Context.MODE_PRIVATE)
@@ -319,6 +380,7 @@ public class RemoteInputModeTest {
             @Override public void onConfirm() { padActions++; }
         });
         mode = new RemoteInputMode(activity, primary, keypad, () -> changes++);
+        root.addView(mode.requestButton());
         root.addView(keypad);
         activity.setContentView(root);
         controller.visible().windowFocusChanged(true);
@@ -343,9 +405,36 @@ public class RemoteInputModeTest {
         return String.valueOf(focused.getTag());
     }
 
-    private void assertMode(boolean shown) {
-        assertEquals(shown, mode.usesOnScreen());
-        assertEquals(shown ? View.VISIBLE : View.GONE, keypad.getVisibility());
+    /** The hardware cannot prove the remote types digits, so the pad waits behind its icon. */
+    private void assertUnproven() {
+        assertFalse(mode.usesOnScreen());
+        assertTrue(mode.showsRequest());
+        assertEquals(View.GONE, keypad.getVisibility());
+        assertEquals(View.VISIBLE, mode.requestButton().getVisibility());
+    }
+
+    /** The remote proved it can type, so neither the pad nor the icon is on the screen. */
+    private void assertProven() {
+        assertFalse(mode.usesOnScreen());
+        assertFalse(mode.showsRequest());
+        assertEquals(View.GONE, keypad.getVisibility());
+        assertEquals(View.GONE, mode.requestButton().getVisibility());
+    }
+
+    private void assertPadOpen() {
+        assertTrue(mode.usesOnScreen());
+        assertFalse(mode.showsRequest());
+        assertEquals(View.VISIBLE, keypad.getVisibility());
+        assertEquals(View.GONE, mode.requestButton().getVisibility());
+    }
+
+    /** The two presses a parent makes: DOWN from the entry onto the icon, then OK. */
+    private void openPad() {
+        press(KeyEvent.KEYCODE_DPAD_DOWN);
+        assertEquals("keypad_request", focusedTag());
+        press(KeyEvent.KEYCODE_DPAD_CENTER);
+        assertPadOpen();
+        assertEquals("key_1", focusedTag());
     }
 
     private void press(int code) {
@@ -361,10 +450,10 @@ public class RemoteInputModeTest {
         return send(action, code, repeat, flags, -1);
     }
 
-    /** The screens hand every key to the pad first, so that is the only route under test. */
+    /** The screens hand every key to the icon first and then to the pad, so that is the route. */
     private boolean send(int action, int code, int repeat, int flags, int deviceId) {
         KeyEvent event = new KeyEvent(0L, 0L, action, code, repeat, 0, deviceId, 0, flags);
-        boolean consumed = keypad.handleKeyEvent(event);
+        boolean consumed = mode.handleKeyEvent(event) || keypad.handleKeyEvent(event);
         ShadowLooper.idleMainLooper();
         return consumed;
     }

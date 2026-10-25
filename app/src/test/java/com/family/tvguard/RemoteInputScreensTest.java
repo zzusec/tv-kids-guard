@@ -71,6 +71,8 @@ public class RemoteInputScreensTest {
         assertNull("2.5.13 removed the manual input switch",
                 activity.getWindow().getDecorView().findViewWithTag("keypad_toggle"));
         assertFalse(activity.findViewById(android.R.id.content).findViewWithTag("key_1").isShown());
+        assertFalse("A remote that can type digits is not even offered the icon",
+                ScreenRemote.offersIcon(activity));
         press(activity.getWindow(), KeyEvent.KEYCODE_1);
         press(activity.getWindow(), KeyEvent.KEYCODE_3);
         assertEquals("●●", ((TextView) activity.findViewById(R.id.lock_input)).getText().toString());
@@ -81,28 +83,53 @@ public class RemoteInputScreensTest {
     }
 
     @Test
-    public void aRemoteWithoutNumberKeysGetsThePadWithoutAnySwitch() {
+    public void aRemoteWithoutNumberKeysIsOfferedAnIconThatOpensThePad() {
         RemoteInputModeTest.DigitInputDevice.reset();
         AdminAuthActivity activity = startGate();
         View root = activity.getWindow().getDecorView();
         assertNull(root.findViewWithTag("keypad_toggle"));
+        assertEquals(View.GONE, activity.findViewById(R.id.keypad_column).getVisibility());
+        assertSame(activity.findViewById(R.id.lock_input), root.findFocus());
+        assertTrue("The pad is behind an icon, not on the screen", ScreenRemote.offersIcon(activity));
+        ScreenRemote.openPad(activity);
         assertEquals(View.VISIBLE, activity.findViewById(R.id.keypad_column).getVisibility());
         assertEquals("key_1", root.findFocus().getTag());
         ScreenRemote.digits(activity, "135790");
-        assertTrue("The pad alone must be enough to authorize a parent", AdminSession.isActive());
+        assertTrue("The pad must still be enough to authorize a parent", AdminSession.isActive());
         assertTrue(activity.isFinishing());
     }
 
     @Test
-    public void aRemotePairedAfterTheScreenOpenedHidesThePadOnTheNextResume() {
+    public void aRemotePairedAfterTheScreenOpenedRetiresThePadAndTheIcon() {
         RemoteInputModeTest.DigitInputDevice.reset();
         AdminAuthActivity activity = startGate();
+        ScreenRemote.openPad(activity);
         assertEquals(View.VISIBLE, activity.findViewById(R.id.keypad_column).getVisibility());
         withDigitRemote();
         controller.pause().resume();
         ShadowLooper.idleMainLooper();
         assertEquals(View.GONE, activity.findViewById(R.id.keypad_column).getVisibility());
+        assertFalse("A remote that proved its digits loses the icon too",
+                ScreenRemote.offersIcon(activity));
         assertFalse(AdminSession.isActive());
+    }
+
+    @Test
+    public void anOpenedPadStaysUpOnItsOwnScreenAndTheNextScreenStartsBehindTheIcon() {
+        RemoteInputModeTest.DigitInputDevice.reset();
+        AdminAuthActivity activity = startGate();
+        ScreenRemote.openPad(activity);
+        controller.pause().resume();
+        ShadowLooper.idleMainLooper();
+        assertTrue("The screen the parent chose keeps its pad across resume",
+                ScreenRemote.padIsOpen(activity));
+        List<String> values = new ArrayList<>();
+        showDialog(values);
+        assertFalse("A new screen is not decided by the last one",
+                dialogRoot().findViewWithTag("key_1").isShown());
+        assertTrue(dialogRoot().findViewWithTag("keypad_request").isShown());
+        dialog.dismiss();
+        assertTrue(values.isEmpty());
     }
 
     @Test
@@ -116,7 +143,8 @@ public class RemoteInputScreensTest {
         ShadowLooper.idleMainLooper();
         Activity activity = controller.get();
         assertNull(activity.getWindow().getDecorView().findViewWithTag("keypad_toggle"));
-        assertTrue(activity.getWindow().getDecorView().findViewWithTag("key_1").isShown());
+        assertFalse("The lock screen keeps its clean layout", ScreenRemote.padIsOpen(activity));
+        assertTrue(ScreenRemote.offersIcon(activity));
         // The PIN proves a parent is present: it authorizes the panel, it never buys viewing time.
         ScreenRemote.digits(activity, "135790");
         assertTrue(AdminSession.isActive());
@@ -137,19 +165,23 @@ public class RemoteInputScreensTest {
     }
 
     @Test
-    public void thePadStaysUpAcrossReopenWhileTheRemoteStillHasNoNumberKeys() {
+    public void anUnprovenRemoteKeepsThePadBehindTheIconOnEveryScreen() {
         RemoteInputModeTest.DigitInputDevice.reset();
         AdminAuthActivity activity = startGate();
         List<String> values = new ArrayList<>();
         showDialog(values);
-        assertTrue(dialog.getWindow().getDecorView().findViewWithTag("key_1").isShown());
+        assertFalse("A numberless remote gets an icon, not a grid",
+                dialogRoot().findViewWithTag("key_1").isShown());
+        openDialogPad();
         dialog.dismiss();
         showDialog(values);
-        assertTrue(dialog.getWindow().getDecorView().findViewWithTag("key_1").isShown());
+        assertFalse(dialogRoot().findViewWithTag("key_1").isShown());
+        openDialogPad();
         dialog.dismiss();
         controller.pause().resume();
         ShadowLooper.idleMainLooper();
-        assertTrue(activity.getWindow().getDecorView().findViewWithTag("key_1").isShown());
+        assertFalse(activity.getWindow().getDecorView().findViewWithTag("key_1").isShown());
+        assertTrue(ScreenRemote.offersIcon(activity));
         assertFalse(AdminSession.isActive());
         assertTrue(values.isEmpty());
     }
@@ -172,6 +204,22 @@ public class RemoteInputScreensTest {
         dialog = new PinDialog(context, "每日时长", "输入 1-1440 分钟", 4, false, values::add);
         dialog.show();
         ShadowLooper.idleMainLooper();
+    }
+
+    private View dialogRoot() {
+        return dialog.getWindow().getDecorView();
+    }
+
+    /** The dialog offers the same icon as the full screens, reached the same way. */
+    private void openDialogPad() {
+        View root = dialogRoot();
+        View request = root.findViewWithTag("keypad_request");
+        assertNotNull(request);
+        assertTrue(request.isShown());
+        press(dialog.getWindow(), KeyEvent.KEYCODE_DPAD_DOWN);
+        assertEquals("keypad_request", root.findFocus().getTag());
+        press(dialog.getWindow(), KeyEvent.KEYCODE_DPAD_CENTER);
+        assertTrue("OK on the icon opens the dialog pad", root.findViewWithTag("key_1").isShown());
     }
 
     private void digits(Window window, String value) {

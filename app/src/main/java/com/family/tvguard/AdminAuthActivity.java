@@ -87,6 +87,12 @@ public class AdminAuthActivity extends Activity {
         });
         ((FrameLayout) findViewById(R.id.keypad_host)).addView(keypad);
         inputMode = new RemoteInputMode(this, masked, keypad, this::configureInputLayout);
+        LinearLayout.LayoutParams icon = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, Math.round(48 * getResources()
+                .getDisplayMetrics().density));
+        icon.topMargin = Math.round(12 * getResources().getDisplayMetrics().density);
+        icon.gravity = Gravity.CENTER_HORIZONTAL;
+        ((LinearLayout) findViewById(R.id.entry_copy)).addView(inputMode.requestButton(), icon);
         configureInputLayout();
         inputMode.focusEntry();
         render();
@@ -187,7 +193,7 @@ public class AdminAuthActivity extends Activity {
                 || code == KeyEvent.KEYCODE_TV_POWER) {
             return super.dispatchKeyEvent(event);
         }
-        if (keypad.handleKeyEvent(event)) {
+        if (inputMode.handleKeyEvent(event) || keypad.handleKeyEvent(event)) {
             render();
             return true;
         }
@@ -317,6 +323,7 @@ public class AdminAuthActivity extends Activity {
         }
         masked.setText(dots);
         keypad.setEnabled(wait == 0L && !openingConsole);
+        inputMode.syncRequestVisibility();
         android.view.View focused = getWindow().getDecorView().findFocus();
         if (wait == 0L && !openingConsole && inputMode.usesOnScreen()
                 && !(focused instanceof android.widget.Button)) {

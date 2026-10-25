@@ -124,6 +124,11 @@ final class PinDialog extends Dialog {
         help.setPadding(0, Math.round(density * (compact ? 10 : 18)), 0, 0);
         copy.addView(help);
         inputMode = new RemoteInputMode(getContext(), inputView, keypad, this::configureInputLayout);
+        LinearLayout.LayoutParams icon = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, Math.round(48 * density));
+        icon.topMargin = Math.round(8 * density);
+        icon.gravity = Gravity.CENTER_HORIZONTAL;
+        copy.addView(inputMode.requestButton(), icon);
         configureInputLayout();
         ScrollView scroll = new ScrollView(getContext());
         scroll.setFillViewport(true);
@@ -154,7 +159,8 @@ final class PinDialog extends Dialog {
         pad.leftMargin = wide ? Math.round(24 * density) : 0;
         pad.topMargin = wide ? 0 : Math.round(18 * density);
         keypad.setLayoutParams(pad);
-        help.setText(showPad ? "方向键选数字 · OK 输入 · 返回取消"
+        help.setText(showPad ? "方向键选数字 · OK 输入 · 返回取消" : inputMode.showsRequest()
+                ? "数字键输入 · 下键选数字键盘图标 · 返回取消"
                 : "数字键输入 · 左键删除 · OK 确认 · 返回取消");
         int width = getContext().getResources().getDisplayMetrics().widthPixels;
         getWindow().setLayout(Math.min(Math.round(density * (wide ? 760 : 560)),
@@ -167,7 +173,7 @@ final class PinDialog extends Dialog {
         if (isVolumeKey(code) || code == KeyEvent.KEYCODE_POWER) {
             return super.dispatchKeyEvent(event);
         }
-        if (keypad.handleKeyEvent(event)) return true;
+        if (inputMode.handleKeyEvent(event) || keypad.handleKeyEvent(event)) return true;
         if (event.getAction() != KeyEvent.ACTION_DOWN || event.getRepeatCount() > 0) {
             return true;
         }

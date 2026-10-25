@@ -563,6 +563,7 @@ public class MainActivityRemoteTest {
 
     private void focusVirtualKey(Window window, String tag) {
         View root = window.getDecorView();
+        openPad(window, root);
         View target = root.findViewWithTag(tag);
         View focused = root.findFocus();
         assertNotNull(focused);
@@ -575,6 +576,22 @@ public class MainActivityRemoteTest {
             press(window, col < to % 3 ? KeyEvent.KEYCODE_DPAD_RIGHT : KeyEvent.KEYCODE_DPAD_LEFT);
         }
         assertSame(target, root.findFocus());
+    }
+
+    /** The pad sits behind its icon on a remote whose digits the hardware cannot prove. */
+    private void openPad(Window window, View root) {
+        View first = root.findViewWithTag("key_1");
+        assertNotNull(first);
+        if (first.isShown()) return;
+        View request = root.findViewWithTag("keypad_request");
+        assertNotNull("An unproven remote is offered a number-pad icon", request);
+        assertTrue(request.isShown());
+        if (!request.hasFocus()) {
+            press(window, KeyEvent.KEYCODE_DPAD_DOWN);
+            assertEquals("keypad_request", root.findFocus().getTag());
+        }
+        press(window, KeyEvent.KEYCODE_DPAD_CENTER);
+        assertEquals("key_1", root.findFocus().getTag());
     }
 
     private int keypadIndex(String tag) {
