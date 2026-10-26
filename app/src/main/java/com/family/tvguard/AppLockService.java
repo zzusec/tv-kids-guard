@@ -26,14 +26,14 @@ import java.util.Set;
  * Watches the foreground window so the guard cannot be walked around.
  *
  * <p>Two things are enforced here. Once the daily quota is spent, every window other than the
- * guard's own is replaced by the lock — except the television's own desktop while a parent has just
- * stepped out of the console to it, which is a desktop pass rather than watching television. And
- * the settings screens that hold the app's own
- * permissions and uninstall button stay behind the parent gate all day, because those are the
- * routes a child uses to switch the guard off. Each visit to one of those screens costs a fresh
- * PIN — a live parent session is not a pass — except while a parent screen of the guard's own is
- * what the family is looking at, and during the short maintenance window that the panel opens on
- * purpose for the system's own confirm pages.
+ * guard's own is replaced by the lock — except while a parent is standing in front of the television
+ * under the 2.5.17 grace, which is the one thing that can hold the lock back on a spent day. And the
+ * settings screens that hold the app's own permissions and uninstall button stay behind the parent
+ * gate all day, because those are the routes a child uses to switch the guard off. Each visit to one
+ * of those screens costs a PIN — a live parent session is not a pass — except for the two minutes
+ * that the last correct PIN bought (2.5.18), while a parent screen of the guard's own is what the
+ * family is looking at, and during the short maintenance window that the panel opens on purpose for
+ * the system's own confirm pages.
  */
 public class AppLockService extends AccessibilityService {
 
@@ -161,16 +161,13 @@ public class AppLockService extends AccessibilityService {
         if (foregroundPackage.equals(getPackageName()) || foregroundPackage.equals(SYSTEM_UI)) {
             return;
         }
-        if (prefs.isParentGraceActive()) {
-            // 2.5.17: a parent entered the PIN and left the console. Until the television next stands
-            // by, neither the quota lock nor the settings gate may put a password page back on the
-            // screen - the page that kept coming back was read as the guard not working at all.
-            // The grace ends only at standby, which the timing service's own receiver watches.
-            return;
-        }
         if (prefs.isGuardActive()) {
             LockActivity.launch(this);
-        } else if (isSettingsPackage(foregroundPackage)) {
+        } else if (isSettingsPackage(foregroundPackage) && !prefs.isParentPinWindowActive()) {
+            // 2.5.18: the settings page costs a parent PIN again once the two minutes that the last
+            // correct PIN bought have run out. The 2.5.17 parent grace deliberately does not cover
+            // this branch - a parent who stepped out of the console keeps the quota lock off until
+            // the next standby, but standing by is not what makes a settings page safe.
             AdminAuthActivity.launch(this);
         }
     }

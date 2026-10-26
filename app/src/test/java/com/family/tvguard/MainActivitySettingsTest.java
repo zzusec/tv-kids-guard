@@ -104,6 +104,7 @@ public class MainActivitySettingsTest {
         assertTrue(menu.contains("44"));
         assertTrue(menu.contains("55"));
         assertTrue(menu.contains("防卸载"));
+        assertTrue(menu.contains("清零今天已看"));
         assertFalse(menu.contains("99"));
         assertRemovedMenuItems(menu);
 
@@ -123,12 +124,14 @@ public class MainActivitySettingsTest {
         assertFalse(menu.contains("33"));
         assertFalse(menu.contains("44"));
         assertFalse(menu.contains("55"));
+        // 77 清零今天已看 only means something while the guard is counting.
+        assertFalse(menu.contains("清零今天已看"));
         assertRemovedMenuItems(menu);
 
         for (String code : new String[] {"22", "33", "44", "55", "66", "77", "88"}) {
             assertShortcutIgnored(code);
         }
-        for (String code : new String[] {"22", "33", "44", "55"}) {
+        for (String code : new String[] {"22", "33", "44", "55", "77"}) {
             assertHiddenButtonIgnored(code);
         }
         assertFalse(prefs.isProtectionEnabled());
@@ -289,7 +292,7 @@ public class MainActivitySettingsTest {
     public void removedShortcutsCannotExecuteEvenWhenProtectionIsEnabled() {
         startPanel(true);
 
-        for (String code : new String[] {"66", "77", "88"}) {
+        for (String code : new String[] {"66", "88"}) {
             assertShortcutIgnored(code);
         }
         assertTrue(prefs.isProtectionEnabled());
@@ -409,7 +412,8 @@ public class MainActivitySettingsTest {
     }
 
     private void assertRemovedMenuItems(String menu) {
-        for (String code : new String[] {"66", "77", "88"}) {
+        // 77 清零今天已看 is a live shortcut since 2.5.18; these three remain retired.
+        for (String code : new String[] {"66", "88"}) {
             assertFalse("Removed shortcut must not appear: " + code, menu.contains(code));
             assertNull(controller.get().findViewById(android.R.id.content)
                     .findViewWithTag("action_" + code));

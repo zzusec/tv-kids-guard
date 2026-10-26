@@ -48,7 +48,8 @@ import static org.robolectric.Shadows.shadowOf;
  * backed out of the console into the television's own desktop, opened any other app and was asked
  * for the password again - the 2.5.15 exemption covered one step, and the first window outside the
  * launcher spent it. The rule hx10 agreed is that a parent who authenticated is present until the
- * television next stands by, so no password page may come back before then, settings pages included.
+ * television next stands by, so the quota lock stays off. The settings page is a separate rule:
+ * since 2.5.18 it costs a PIN again once the two minutes that the last correct PIN bought are up.
  *
  * <p>The grace buys no allowance and suspends no accounting. It is granted only by leaving the
  * console after a correct PIN, it never touches the daily limit, the bonus or the lock flag except
@@ -184,19 +185,38 @@ public class ParentGraceTest {
     }
 
     @Test
-    public void settingsPagesAreForgivenWhileTheGraceLasts() {
+    public void settingsPagesStayFreeForTheTwoMinutesThePinBuys() {
+        // 2.5.18: the settings page is not covered by the grace but by the two minutes that the PIN
+        // the parent just typed buys, so on leaving the console it is still free.
         openConsole().onBackPressed();
+        assertTrue(prefs.isParentGraceActive());
         markBaseline();
 
         window(SETTINGS_APP);
 
-        assertFalse("宽限期内进设置不再要密码", activityStarted(AdminAuthActivity.class));
+        assertFalse("刚输过密码，两分钟内进设置不再要密码", activityStarted(AdminAuthActivity.class));
         assertFalse(activityStarted(LockActivity.class));
     }
 
     @Test
+    public void theSettingsGateReturnsWhenTheTwoMinutesRunOut() {
+        // The grace keeps the quota lock off, but it does not keep the settings page free: after two
+        // minutes without a PIN, opening settings costs a PIN again even inside the grace.
+        openConsole().onBackPressed();
+        ShadowLooper.idleMainLooper(Prefs.PIN_WINDOW_MILLIS + 1_000L, TimeUnit.MILLISECONDS);
+        assertTrue("宽限还在，锁屏仍被压住", prefs.isParentGraceDeferringLock());
+        markBaseline();
+
+        window(SETTINGS_APP);
+
+        assertTrue("两分钟一过，设置页重新要密码", activityStarted(AdminAuthActivity.class));
+        assertFalse("设置页要密码不等于把时长锁屏拉回来", activityStarted(LockActivity.class));
+    }
+
+    @Test
     public void theSettingsGateComesBackOnceTheGraceHasEnded() {
-        // A day that still has allowance: the grace forgives settings, and standby puts 2.5.9 back.
+        // A day that still has allowance, so the grace is only about settings; once both the grace
+        // and the two minutes are gone, 2.5.9 is fully back.
         MainActivity panel = openConsole();
         service().setDailyLimitMinutes(Prefs.DEFAULT_LIMIT_MINUTES + 30);
         assertFalse("额度还剩时锁屏解除", service().isLocked());
@@ -206,11 +226,18 @@ public class ParentGraceTest {
         assertFalse(activityStarted(AdminAuthActivity.class));
 
         closePanel();
+        ShadowLooper.idleMainLooper(Prefs.PIN_WINDOW_MILLIS + 1_000L, TimeUnit.MILLISECONDS);
+        power.setIsInteractive(false);
         deliver(Intent.ACTION_SCREEN_OFF);
         ShadowLooper.idleMainLooper();
+        power.setIsInteractive(true);
+        deliver(Intent.ACTION_SCREEN_ON);
+        markBaseline();
+
         window(SETTINGS_APP);
 
-        assertTrue("宽限结束后设置页仍然每次要密码（2.5.9）", activityStarted(AdminAuthActivity.class));
+        assertTrue("宽限和两分钟都结束后，设置页仍然要密码（2.5.9）",
+                activityStarted(AdminAuthActivity.class));
     }
 
     @Test
@@ -386,6 +413,10 @@ public class ParentGraceTest {
 
     private MainActivity openConsole() {
         closePanel();
+        // The console is only ever reached through a correct parent PIN: the gate authenticates,
+        // grants the session and hands the panel over. That PIN is also what buys the 2.5.18
+        // two-minute settings window, so a harness that skipped it would not match the television.
+        assertEquals(Prefs.AuthResult.SUCCESS, prefs.authenticate("135790"));
         AdminSession.grant();
         panelController = Robolectric.buildActivity(MainActivity.class)
                 .create().start().resume().visible().windowFocusChanged(true);

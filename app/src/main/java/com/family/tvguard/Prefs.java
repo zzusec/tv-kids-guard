@@ -35,6 +35,15 @@ final class Prefs {
      */
     private static final String KEY_GRACE_SINCE = "parent_grace_since";
     private static final String KEY_GRACE_FROM_LOCK = "parent_grace_from_lock";
+    /**
+     * When the parent PIN was last entered correctly, on this boot. Settings stay free for
+     * {@link #PIN_WINDOW_MILLIS} after it, so a parent working in the settings app is not asked for
+     * the password on every single page.
+     */
+    private static final String KEY_PIN_VERIFIED_AT = "parent_pin_verified_at";
+
+    /** How long one correct parent PIN keeps the settings page free: two minutes. */
+    static final long PIN_WINDOW_MILLIS = 2 * 60_000L;
 
     enum AuthResult { SUCCESS, INCORRECT, COOLDOWN, INVALID }
 
@@ -144,6 +153,9 @@ final class Prefs {
             return AuthResult.INCORRECT;
         }
         clearFailures();
+        // The parent is standing in front of the television and proved it, so the settings pages get
+        // the two-minute window on top of whatever screen this unlocked.
+        noteParentPinVerified();
         return AuthResult.SUCCESS;
     }
 
@@ -323,6 +335,35 @@ final class Prefs {
     /** Whether the live parent grace also holds the quota lock off, not just the settings gate. */
     boolean isParentGraceDeferringLock() {
         return isParentGraceActive() && sp.getBoolean(KEY_GRACE_FROM_LOCK, false);
+    }
+
+    /**
+     * Records that the parent PIN has just been entered correctly. {@link #authenticate(String)} is
+     * the only place that knows a parent is at the remote: writing a password through
+     * {@link #setPassword(String)} is not proof that the current one was typed, so changing the PIN
+     * does not open this window on its own (the {@code 11 改密码} flow authenticates first).
+     */
+    private void noteParentPinVerified() {
+        sp.edit().putLong(KEY_PIN_VERIFIED_AT, SystemClock.elapsedRealtime()).commit();
+    }
+
+    /**
+     * Whether the settings pages are still inside the two minutes that one correct parent PIN buys.
+     * The clock is {@code elapsedRealtime}, so a power cycle restarts it below the stored moment and
+     * the window is gone with the previous boot — no flag to clear and no way to inherit a parent's
+     * pass across a restart.
+     */
+    boolean isParentPinWindowActive() {
+        long at = sp.getLong(KEY_PIN_VERIFIED_AT, 0L);
+        if (at <= 0L) {
+            return false;
+        }
+        long now = SystemClock.elapsedRealtime();
+        if (now < at) {
+            sp.edit().remove(KEY_PIN_VERIFIED_AT).apply();
+            return false;
+        }
+        return now - at <= PIN_WINDOW_MILLIS;
     }
 
     /**

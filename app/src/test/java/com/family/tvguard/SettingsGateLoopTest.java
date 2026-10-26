@@ -126,9 +126,10 @@ public class SettingsGateLoopTest {
         assertTrue("面板在设置页之上时必须保留家长授权", AdminSession.isActive());
         assertTrue(MainActivity.isAuthorizedVisible());
 
-        // Leaving the panel ends the session, and the same settings page asks for the PIN again.
-        // The PIN is not remembered as a pass: the loop is stopped only by the panel being on
-        // screen, which is what keeps this reproducible for a family.
+        // Leaving the panel ends the session. The two minutes this PIN bought keep the settings page
+        // free (2.5.18), but the PIN is still not remembered as a pass: once they run out the very
+        // same page costs a PIN again, and the loop is still stopped only by the panel being on
+        // screen - which is what keeps this reproducible for a family.
         panelController.pause().stop().destroy();
         panelController = null;
         assertFalse(AdminSession.isActive());
@@ -136,7 +137,14 @@ public class SettingsGateLoopTest {
 
         window(SONY_SETTINGS);
 
-        assertTrue("家长离开后设置页必须重新要求密码", activityStarted(AdminAuthActivity.class));
+        assertFalse("两分钟内进设置不再要密码", activityStarted(AdminAuthActivity.class));
+
+        ShadowLooper.idleMainLooper(Prefs.PIN_WINDOW_MILLIS + 1_000L, TimeUnit.MILLISECONDS);
+        markBaseline();
+        window(SONY_SETTINGS);
+
+        assertTrue("两分钟一过，家长离开后设置页必须重新要求密码",
+                activityStarted(AdminAuthActivity.class));
     }
 
     @Test

@@ -144,9 +144,11 @@ public class MainActivityUpdateTest {
             }
         }
         assertEquals(1, updateEntries);
-        for (String code : new String[]{"66", "77", "88"}) {
+        // 77 清零今天已看 is the single button of the fifth row and is not an update entry.
+        for (String code : new String[]{"66", "88"}) {
             assertTrue(menu.findViewWithTag("action_" + code) == null);
         }
+        assertNotNull(menu.findViewWithTag("action_77"));
         assertNotNull(activity.findViewById(R.id.update_text));
     }
 

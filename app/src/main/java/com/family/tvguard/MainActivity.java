@@ -124,15 +124,17 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * Panel rows. A cell holds one action, except the last one: 55 (protection on) and 99
-     * (protection off) can never be available together, so they share a slot and the panel
-     * keeps the four rows that fit on a 1080p television.
+     * Panel rows. A cell holds one action, except the 55/99 cell: 55 (protection on) and 99
+     * (protection off) can never be available together, so they share a slot. 77 rides alone on the
+     * fifth row; the rows live inside {@code main_scroll}, so a 1080p set reaches the fifth row by
+     * focusing down - which is exactly what still has to be confirmed on the television.
      */
     private static final String[][][] ACTION_ROWS = {
             {{"00", "关闭面板"}, {"11", "改密码"}},
             {{"12", "修改每日时长"}, {"13", "检查更新"}},
             {{"22", "临时加时长"}, {"33", "立即锁定"}},
             {{"44", "关闭防护"}, {"55", "开启防卸载", "99", "启用防护"}},
+            {{"77", "清零今天已看"}},
     };
 
     private void createActionButtons() {
@@ -182,11 +184,11 @@ public class MainActivity extends Activity {
 
     /**
      * Shortcut order in the two-column grid; hidden actions are skipped, never landed on.
-     * 55 and 99 share the last cell and are never visible together, so a row never has more
-     * than two visible cells.
+     * 55 and 99 share the last cell of their row and are never visible together, so a row never has
+     * more than two visible cells. 77 is the single cell of the fifth row.
      */
     private static final String[][] GRID = {
-            {"00", "11"}, {"12", "13"}, {"22", "33"}, {"44", "55", "99"}
+            {"00", "11"}, {"12", "13"}, {"22", "33"}, {"44", "55", "99"}, {"77"}
     };
 
     /**
@@ -271,6 +273,8 @@ public class MainActivity extends Activity {
                         && prefs.getBonusSeconds() < Prefs.MAX_BONUS_MINUTES * 60L;
             case "33":
             case "44":
+            case "77":
+                // 77 清零今天已看 only means something while the guard is counting.
                 return prefs.isProtectionEnabled();
             case "55":
                 return prefs.isProtectionEnabled() && !DeviceProtection.isAdminActive(this);
@@ -442,6 +446,7 @@ public class MainActivity extends Activity {
             case "44": confirmRemoval(); break;
             case "55": enableUninstallProtection(); break;
             case "99": resumeProtection(); break;
+            case "77": clearTodayUsage(); break;
             default: break;
         }
     }
@@ -628,6 +633,24 @@ public class MainActivity extends Activity {
                 refreshStatus();
             }
         });
+    }
+
+    /**
+     * {@code 77 清零今天已看}: today's watched seconds go back to zero, which is what makes a real
+     * television testable - otherwise every check that runs past the allowance locks the set for the
+     * rest of the day. The daily limit and today's bonus minutes are left exactly as they are, and a
+     * lock that was up comes down because the allowance is whole again.
+     */
+    private void clearTodayUsage() {
+        GuardService service = GuardService.get();
+        if (service == null) {
+            GuardService.start(this);
+            toast("服务正在恢复，请稍后重试");
+            return;
+        }
+        service.clearTodayUsage();
+        toast("今天已看已清零");
+        refreshStatus();
     }
 
     private void lockNow() {

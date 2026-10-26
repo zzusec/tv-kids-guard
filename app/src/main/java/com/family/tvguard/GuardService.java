@@ -581,6 +581,34 @@ public class GuardService extends Service {
         }
     }
 
+    /**
+     * {@code 77 清零今天已看}: today's watched seconds go back to zero. This exists because the guard
+     * is verified on a real television with a real remote, and every check that runs past the
+     * allowance would otherwise lock the set for the rest of the day and cost the family its time.
+     *
+     * <p>Only today's usage moves. The daily limit and the bonus minutes stay exactly as the parent
+     * left them, so this is a reset of the counter rather than a grant of viewing time - and because
+     * the allowance is whole again, a lock that is currently up has nothing left to hold and comes
+     * down with the countdown returning to the corner.
+     */
+    void clearTodayUsage() {
+        if (!AdminSession.isActive()) {
+            throw new IllegalStateException("Parent authorization required");
+        }
+        usedMillis = 0L;
+        prefs.setUsedSeconds(0L);
+        // Re-arm the counting baseline: without this the gap since the previous tick would be
+        // charged straight back onto the counter that has just been cleared.
+        lastTickUptime = SystemClock.uptimeMillis();
+        lastTickElapsed = SystemClock.elapsedRealtime();
+        if (locked || prefs.isLocked()) {
+            // Clears the lock flag and the shield and brings the corner back showing the full day.
+            exitLock();
+        } else {
+            updateCountdown(remainingMillis());
+        }
+    }
+
     // -------------------------------------------------------------- overlays
 
     private int overlayType() {
