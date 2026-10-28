@@ -98,6 +98,9 @@ public class GuardService extends Service {
                 // the lock again rather than the screen the parent left it on. This is the one
                 // boundary of the grace, so the family ending a viewing session is a power key away.
                 prefs.endParentGrace();
+                // 2.5.19: the settings hold lives on the same boundary, because a television that
+                // stood by and woke up is not the parent still standing in the settings menu.
+                prefs.clearSettingsHold();
             } else if (Intent.ACTION_SCREEN_ON.equals(action) && locked) {
                 // However the child blanked the screen, the lock must be the first thing back.
                 lockActivityVisible = false;
@@ -488,8 +491,10 @@ public class GuardService extends Service {
             return;
         }
         // 33 立即锁定 is the parent ending this viewing session, so it also spends the grace the
-        // same PIN bought: the lock has to come back now, not at the next standby.
+        // same PIN bought: the lock has to come back now, not at the next standby. The 2.5.19
+        // settings hold is spent with it — locking the set is not a parent errand in the menu.
         prefs.endParentGrace();
+        prefs.clearSettingsHold();
         if (!locked) {
             enterLock();
         }

@@ -30,10 +30,11 @@ import java.util.Set;
  * under the 2.5.17 grace, which is the one thing that can hold the lock back on a spent day. And the
  * settings screens that hold the app's own permissions and uninstall button stay behind the parent
  * gate all day, because those are the routes a child uses to switch the guard off. Each visit to one
- * of those screens costs a PIN — a live parent session is not a pass — except for the two minutes
- * that the last correct PIN bought (2.5.18), while a parent screen of the guard's own is what the
- * family is looking at, and during the short maintenance window that the panel opens on purpose for
- * the system's own confirm pages.
+ * of those screens costs a PIN — a live parent session is not a pass — and the PIN then keeps the
+ * settings menu free for as long as the family stays inside it (2.5.19, on top of the two minutes
+ * that 2.5.18 gave it), while a parent screen of the guard's own is what the family is looking at,
+ * and during the short maintenance window that the panel opens on purpose for the system's own
+ * confirm pages.
  */
 public class AppLockService extends AccessibilityService {
 
@@ -149,6 +150,11 @@ public class AppLockService extends AccessibilityService {
         if (!prefs.isProtectionEnabled() || foregroundPackage.isEmpty()) {
             return;
         }
+        if (foregroundPackage.equals(getPackageName()) || foregroundPackage.equals(SYSTEM_UI)) {
+            // The lock screen, the verification page and the system UI are not the family walking
+            // out of the settings menu, so they neither refresh the hold nor spend it.
+            return;
+        }
         // Every visit to a settings page costs a PIN, but the guard never fights its own screens.
         // This is not a nicety: the parent panel is translucent, so the settings page it was opened
         // over stays visible underneath and keeps reporting itself as the foreground window.
@@ -156,19 +162,37 @@ public class AppLockService extends AccessibilityService {
         // hundred milliseconds; the panel's onPause then revoked the session, so the next gate
         // really did demand the password again, forever (BRAVIA 4K 2015, 2.5.7).
         if (parentUiOnScreen() || AdminSession.isMaintenanceActive()) {
-            return;
-        }
-        if (foregroundPackage.equals(getPackageName()) || foregroundPackage.equals(SYSTEM_UI)) {
+            refreshSettingsHold();
             return;
         }
         if (prefs.isGuardActive()) {
             LockActivity.launch(this);
-        } else if (isSettingsPackage(foregroundPackage) && !prefs.isParentPinWindowActive()) {
-            // 2.5.18: the settings page costs a parent PIN again once the two minutes that the last
-            // correct PIN bought have run out. The 2.5.17 parent grace deliberately does not cover
-            // this branch - a parent who stepped out of the console keeps the quota lock off until
-            // the next standby, but standing by is not what makes a settings page safe.
-            AdminAuthActivity.launch(this);
+        } else if (isSettingsPackage(foregroundPackage)) {
+            refreshSettingsHold();
+            // 2.5.18 gave a correct PIN two minutes of free settings; the television reported that a
+            // parent working through the menu was locked out by the password page the moment those
+            // minutes ran out. Since 2.5.19 the visit itself is the pass: while a settings surface
+            // stays on screen the hold keeps the gate off, and it is spent the first time the family
+            // looks at something else, at standby, at {@code 33 立即锁定}, with a new day or a boot.
+            if (!prefs.isSettingsGateFree()) {
+                AdminAuthActivity.launch(this);
+            }
+        } else {
+            prefs.clearSettingsHold();
+        }
+    }
+
+    /**
+     * Keeps the 2.5.19 settings hold alive while the family stays inside the settings menu. What the
+     * watcher can see is the only proof of that, and this runs even while the guard's own screens sit
+     * on top of the menu - the parent panel is translucent, so the settings page underneath keeps
+     * reporting itself. A dark panel does not count: the same second witness the counter has used
+     * since 2.5.16 says nobody is standing at the television, so standby cannot quietly renew it.
+     */
+    private void refreshSettingsHold() {
+        if (isSettingsPackage(foregroundPackage) && PanelState.isLit(this)
+                && prefs.isSettingsGateFree()) {
+            prefs.noteSettingsPresence();
         }
     }
 

@@ -41,7 +41,10 @@ import static org.robolectric.Shadows.shadowOf;
  *
  * <p>Product rule proven here: every visit to a settings page costs a PIN, but the guard never
  * raises a gate or a lock over a parent screen of its own that is already on screen. Loop safety
- * comes from that one rule alone, not from remembering the PIN.
+ * comes from that one rule alone, not from remembering the PIN. Once a PIN has been paid, the visit
+ * itself keeps the settings menu free for as long as the family stays inside it (2.5.19) — which is
+ * what the tail of this test now measures, because a parent who left the panel over the menu they
+ * came to work on was being pushed back onto the password page.
  */
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = {24, 33}, shadows = {SettingsGateLoopTest.BehindWindowShadow.class})
@@ -126,10 +129,11 @@ public class SettingsGateLoopTest {
         assertTrue("面板在设置页之上时必须保留家长授权", AdminSession.isActive());
         assertTrue(MainActivity.isAuthorizedVisible());
 
-        // Leaving the panel ends the session. The two minutes this PIN bought keep the settings page
-        // free (2.5.18), but the PIN is still not remembered as a pass: once they run out the very
-        // same page costs a PIN again, and the loop is still stopped only by the panel being on
-        // screen - which is what keeps this reproducible for a family.
+        // Leaving the panel ends the session. The settings page it was opened over is still the window
+        // the family is looking at, and since 2.5.19 the visit itself is the pass: a PIN already paid
+        // keeps that menu free for as long as nobody leaves it, so the two minutes running out no
+        // longer puts a password page back over a page the parent is still working on. Loop safety
+        // still comes from the panel being on screen, not from remembering the PIN.
         panelController.pause().stop().destroy();
         panelController = null;
         assertFalse(AdminSession.isActive());
@@ -139,11 +143,25 @@ public class SettingsGateLoopTest {
 
         assertFalse("两分钟内进设置不再要密码", activityStarted(AdminAuthActivity.class));
 
-        ShadowLooper.idleMainLooper(Prefs.PIN_WINDOW_MILLIS + 1_000L, TimeUnit.MILLISECONDS);
+        // Long enough to outlive both the two minutes and the five minutes an unrefreshed sighting is
+        // trusted for, so what keeps this page free has to be the watcher actually seeing it.
+        ShadowLooper.idleMainLooper(Prefs.PIN_WINDOW_MILLIS + 4 * 60_000L, TimeUnit.MILLISECONDS);
         markBaseline();
         window(SONY_SETTINGS);
 
-        assertTrue("两分钟一过，家长离开后设置页必须重新要求密码",
+        assertFalse("两分钟一过，但家长还停在设置菜单里，仍不该弹密码页",
+                activityStarted(AdminAuthActivity.class));
+        assertTrue("靠的是被持续看见的设置宽限", prefs.isSettingsHoldActive());
+
+        // Walking out of the menu spends it, and the next entry costs a PIN again exactly as 2.5.9
+        // requires - the free pass is the visit, not the boot.
+        window("com.vendor.video");
+        assertFalse("走出设置菜单，宽限当场结束", prefs.isSettingsHoldActive());
+        markBaseline();
+        window(SONY_SETTINGS);
+
+        assertFalse(prefs.isParentPinWindowActive());
+        assertTrue("离开设置菜单之后再回来必须重新要密码",
                 activityStarted(AdminAuthActivity.class));
     }
 

@@ -7,7 +7,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.PowerManager;
 import android.os.SystemClock;
+import android.view.Display;
 import android.view.KeyEvent;
+import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 
@@ -24,7 +26,9 @@ import org.robolectric.annotation.Config;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
 import org.robolectric.annotation.LooperMode;
+import org.robolectric.shadow.api.Shadow;
 import org.robolectric.shadows.ShadowAccessibilityService;
+import org.robolectric.shadows.ShadowDisplay;
 import org.robolectric.shadows.ShadowLooper;
 import org.robolectric.shadows.ShadowPowerManager;
 import org.robolectric.shadows.ShadowSettings;
@@ -40,16 +44,21 @@ import static org.junit.Assert.assertTrue;
 import static org.robolectric.Shadows.shadowOf;
 
 /**
- * The 2.5.18 settings rule: opening the television's settings costs the parent PIN, and one correct
- * PIN keeps the settings pages free for the next two minutes - long enough for a parent who is
- * standing at the remote working through the settings app, short enough that the PIN is still not a
- * pass. The window is measured from the last correct PIN of this boot, so a power cycle ends it and
- * the 2.5.9 "every visit costs a PIN" rule is only relaxed inside those two minutes.
+ * The settings rule: opening the television's settings costs the parent PIN, one correct PIN keeps
+ * the settings pages free for the next two minutes (2.5.18), and a parent who is still working inside
+ * the settings menu stays free for as long as they stay there (2.5.19). The reported bug was the
+ * second half of that: a parent who paid the PIN and kept operating in the menu was pushed back onto
+ * the password page the moment the two minutes ran out.
  *
- * <p>Two boundaries are deliberate. The window covers the settings gate only: it never lifts the
- * quota lock and it never applies to the parent console, whose remote shortcut always verifies. And
- * it is opened by a verified PIN, not by writing one - setting or changing the password through
- * {@link Prefs#setPassword} is not proof that the parent typed the current one.
+ * <p>The hold is the watcher's own sighting of a settings surface on a lit panel, so it dies the first
+ * time the family looks at anything else, at standby, at {@code 33 立即锁定}, with a new day, and with
+ * a power cycle - and an unrefreshed sighting ages out on its own, so a recycled watcher cannot leave
+ * the menu open forever.
+ *
+ * <p>Two boundaries are deliberate. The window and the hold cover the settings gate only: they never
+ * lift the quota lock and they never apply to the parent console, whose remote shortcut always
+ * verifies. And they are opened by a verified PIN, not by writing one - setting or changing the
+ * password through {@link Prefs#setPassword} is not proof that the parent typed the current one.
  */
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = {24, 33}, qualifiers = "w960dp-h540dp-land",
@@ -89,6 +98,9 @@ public class ParentPinWindowTest {
         ShadowSettings.setCanDrawOverlays(true);
         power = shadowOf((PowerManager) context.getSystemService(Context.POWER_SERVICE));
         power.setIsInteractive(true);
+        // The hold is refreshed only while the panel is lit, so these tests have to answer for the
+        // display subsystem as well as the power manager.
+        panel(Display.STATE_ON);
         guardController = Robolectric.buildService(GuardService.class).create();
         guard = GuardService.get();
         assertNotNull(guard);
@@ -171,17 +183,21 @@ public class ParentPinWindowTest {
     }
 
     @Test
-    public void theSettingsGateReturnsWhenTheTwoMinutesAreUp() {
+    public void theSettingsGateReturnsOnceTheMenuIsLeftAndTheTwoMinutesAreUp() {
         enterPin();
         window(SETTINGS_APP);
         assertFalse(activityStarted(AdminAuthActivity.class));
 
         ShadowLooper.idleMainLooper(Prefs.PIN_WINDOW_MILLIS + 1_000L, TimeUnit.MILLISECONDS);
         markBaseline();
+        window(VIDEO_APP);
+        assertFalse("走出设置菜单，宽限就花掉了", prefs.isSettingsHoldActive());
+
+        markBaseline();
         window(SETTINGS_APP);
 
         assertFalse("两分钟一到，窗口就关闭", prefs.isParentPinWindowActive());
-        assertTrue("两分钟一过，设置页重新要密码", activityStarted(AdminAuthActivity.class));
+        assertTrue("离开菜单之后重新进设置要密码", activityStarted(AdminAuthActivity.class));
     }
 
     @Test
@@ -230,7 +246,9 @@ public class ParentPinWindowTest {
             assertFalse(pkg + " 在两分钟内不该弹密码页", activityStarted(AdminAuthActivity.class));
         }
 
-        // ... and once the window is gone each of them costs a PIN again.
+        // ... and once the window is gone each of them costs a PIN again. The family has to leave the
+        // menu first: staying inside it is the 2.5.19 hold, not the two minutes (2.5.18).
+        window(VIDEO_APP);
         ShadowLooper.idleMainLooper(Prefs.PIN_WINDOW_MILLIS + 1_000L, TimeUnit.MILLISECONDS);
         for (String pkg : new String[] {SETTINGS_APP, XIAOMI_SETTINGS, INSTALLER}) {
             markBaseline();
@@ -250,7 +268,134 @@ public class ParentPinWindowTest {
         assertFalse(activityStarted(LockActivity.class));
     }
 
+    // --------------------------------------------------- the 2.5.19 settings hold
+
+    @Test
+    public void workingThroughTheSettingsMenuNeverAsksForThePinAgain() {
+        // The reported bug: a parent paid the PIN, kept operating inside the settings menu, and the
+        // password page came back for them the moment the two minutes ran out.
+        enterPin();
+        window(SETTINGS_APP);
+        assertTrue("走进设置菜单的一刻就挂上宽限", prefs.isSettingsHoldActive());
+        markBaseline();
+
+        // Eight minutes of walking through the menu, reported the way the watcher sees each page.
+        for (int minute = 0; minute < 8; minute++) {
+            ShadowLooper.idleMainLooper(60_000L, TimeUnit.MILLISECONDS);
+            window(new String[] {SETTINGS_APP, XIAOMI_SETTINGS, INSTALLER}[minute % 3]);
+            assertFalse("停在设置菜单里第 " + (minute + 1) + " 分钟不该弹密码页",
+                    activityStarted(AdminAuthActivity.class));
+        }
+
+        assertFalse("两分钟窗口本身早就走完了", prefs.isParentPinWindowActive());
+        assertTrue("人还在菜单里，宽限就还在", prefs.isSettingsHoldActive());
+        assertFalse("整段设置操作一次密码都没要", activityStarted(AdminAuthActivity.class));
+    }
+
+    @Test
+    public void walkingOutOfTheSettingsMenuSpendsTheHoldAtOnce() {
+        enterPin();
+        window(SETTINGS_APP);
+        assertTrue(prefs.isSettingsHoldActive());
+        markBaseline();
+
+        window(VIDEO_APP);
+
+        assertFalse("走出设置菜单，宽限当场结束", prefs.isSettingsHoldActive());
+        assertTrue("两分钟窗口仍然单独成立", prefs.isParentPinWindowActive());
+    }
+
+    @Test
+    public void theHoldOnlyStartsBehindACorrectPin() {
+        // The menu cannot feed itself: without a paid PIN an unbounded stay buys nothing.
+        window(SETTINGS_APP);
+        assertTrue("第一次进设置要密码", activityStarted(AdminAuthActivity.class));
+        assertFalse("没付过密码就没有宽限", prefs.isSettingsHoldActive());
+        markBaseline();
+
+        ShadowLooper.idleMainLooper(3 * 60_000L, TimeUnit.MILLISECONDS);
+        window(SETTINGS_APP);
+
+        assertFalse(prefs.isSettingsHoldActive());
+        assertTrue("没付过密码，停在设置菜单里多久还是要密码",
+                activityStarted(AdminAuthActivity.class));
+    }
+
+    @Test
+    public void aSightingTheWatcherNeverRefreshesAgesOut() {
+        // The hold lives on sightings, and a sighting that stops being reported - a recycled watcher -
+        // has to expire, or the settings menu would stand open for the rest of the boot.
+        enterPin();
+        window(SETTINGS_APP);
+        ShadowLooper.idleMainLooper(3 * 60_000L, TimeUnit.MILLISECONDS);
+        assertFalse(prefs.isParentPinWindowActive());
+        assertTrue("一直停在菜单里，宽限续过了两分钟", prefs.isSettingsHoldActive());
+
+        context.getSharedPreferences("tvguard_prefs", Context.MODE_PRIVATE).edit()
+                .putLong("parent_settings_seen_at",
+                        SystemClock.elapsedRealtime() - Prefs.SETTINGS_HOLD_MILLIS - 1_000L)
+                .commit();
+
+        assertFalse("五分钟没人看见设置菜单，宽限就自己结束", prefs.isSettingsHoldActive());
+        markBaseline();
+        window(SETTINGS_APP);
+        assertTrue("陈旧的一眼不构成长期免密", activityStarted(AdminAuthActivity.class));
+    }
+
+    @Test
+    public void aDarkPanelIsNotAParentStandingInTheSettingsMenu() {
+        enterPin();
+        window(SETTINGS_APP);
+        assertTrue(prefs.isSettingsHoldActive());
+
+        power.setIsInteractive(false);
+        panel(Display.STATE_OFF);
+        context.getSharedPreferences("tvguard_prefs", Context.MODE_PRIVATE).edit()
+                .putLong("parent_settings_seen_at",
+                        SystemClock.elapsedRealtime() - Prefs.SETTINGS_HOLD_MILLIS - 1_000L)
+                .commit();
+
+        assertFalse("熄屏期间看不到有人在菜单里", prefs.isSettingsHoldActive());
+        markBaseline();
+        power.setIsInteractive(true);
+        panel(Display.STATE_ON);
+        window(SETTINGS_APP);
+        assertFalse(activityStarted(AdminAuthActivity.class));
+    }
+
     // ------------------------------------------------------- what it never covers
+
+    @Test
+    public void theHoldNeverLiftsTheQuotaLock() {
+        enterPin();
+        window(SETTINGS_APP);
+        assertTrue(prefs.isSettingsHoldActive());
+
+        // The allowance runs out while the parent is still inside the menu.
+        prefs.setUsedSeconds(Prefs.DEFAULT_LIMIT_MINUTES * 60L);
+        markBaseline();
+
+        window(SETTINGS_APP);
+
+        assertTrue("额度用尽时，停在设置菜单也照样被时长锁屏拦住",
+                activityStarted(LockActivity.class));
+        assertFalse("宽限只管设置密码，不管锁屏", activityStarted(AdminAuthActivity.class));
+    }
+
+    @Test
+    public void theHoldDoesNotHandOverTheParentConsole() {
+        enterPin();
+        window(SETTINGS_APP);
+        assertTrue(prefs.isSettingsHoldActive());
+        markBaseline();
+
+        watcher.onKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_0));
+        watcher.onKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_0));
+
+        assertTrue("停在设置菜单里也不能连按 0 免密进面板",
+                activityStarted(AdminAuthActivity.class));
+        assertFalse(AdminSession.isActive());
+    }
 
     @Test
     public void theWindowDoesNotLiftTheQuotaLock() {
@@ -280,6 +425,67 @@ public class ParentPinWindowTest {
     }
 
     // ------------------------------------------------------------- how it ends
+
+    @Test
+    public void standbySpendsTheHoldWithTheGrace() {
+        enterPin();
+        window(SETTINGS_APP);
+        assertTrue(prefs.isSettingsHoldActive());
+
+        power.setIsInteractive(false);
+        deliver(Intent.ACTION_SCREEN_OFF);
+        ShadowLooper.idleMainLooper();
+
+        assertFalse("待机把设置宽限一起花掉", prefs.isSettingsHoldActive());
+    }
+
+    @Test
+    public void lockingNowSpendsTheHold() {
+        enterPin();
+        window(SETTINGS_APP);
+        assertTrue(prefs.isSettingsHoldActive());
+
+        AdminSession.grant();
+        guard.lockNow();
+
+        assertFalse("33 立即锁定把设置宽限也花掉", prefs.isSettingsHoldActive());
+    }
+
+    @Test
+    public void aPowerCycleEndsTheHold() {
+        enterPin();
+        window(SETTINGS_APP);
+        assertTrue(prefs.isSettingsHoldActive());
+
+        long future = SystemClock.elapsedRealtime() + TimeUnit.HOURS.toMillis(6);
+        context.getSharedPreferences("tvguard_prefs", Context.MODE_PRIVATE).edit()
+                .putLong("parent_settings_seen_at", future)
+                .putLong("parent_pin_verified_at", future).commit();
+
+        assertFalse("断电重开不能继承上一次开机的设置宽限", prefs.isSettingsHoldActive());
+        assertFalse(prefs.isParentPinWindowActive());
+        markBaseline();
+        window(SETTINGS_APP);
+        assertTrue(activityStarted(AdminAuthActivity.class));
+    }
+
+    @Test
+    public void aNewCalendarDaySpendsTheHold() {
+        enterPin();
+        window(SETTINGS_APP);
+        ShadowLooper.idleMainLooper(Prefs.PIN_WINDOW_MILLIS + 60_000L, TimeUnit.MILLISECONDS);
+        assertTrue("一直停在菜单里，宽限续过了两分钟", prefs.isSettingsHoldActive());
+        assertFalse(prefs.isParentPinWindowActive());
+
+        context.getSharedPreferences("tvguard_prefs", Context.MODE_PRIVATE).edit()
+                .putString("day", "2000-01-01").commit();
+
+        assertTrue(prefs.rollOverIfNeeded());
+        assertFalse("换天连同它清零的计数器一起结束宽限", prefs.isSettingsHoldActive());
+        markBaseline();
+        window(SETTINGS_APP);
+        assertTrue("新的一天进设置菜单重新要密码", activityStarted(AdminAuthActivity.class));
+    }
 
     @Test
     public void aPowerCycleEndsTheWindow() {
@@ -378,6 +584,13 @@ public class ParentPinWindowTest {
         for (BroadcastReceiver receiver : receivers) {
             receiver.onReceive(guard, intent);
         }
+    }
+
+    /** Answers for the television's display subsystem, the hold's second witness. */
+    private void panel(int state) {
+        WindowManager wm = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
+        ShadowDisplay shadow = Shadow.extract(wm.getDefaultDisplay());
+        shadow.setState(state);
     }
 
     private void markBaseline() {

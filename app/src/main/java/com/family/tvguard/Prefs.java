@@ -37,13 +37,28 @@ final class Prefs {
     private static final String KEY_GRACE_FROM_LOCK = "parent_grace_from_lock";
     /**
      * When the parent PIN was last entered correctly, on this boot. Settings stay free for
-     * {@link #PIN_WINDOW_MILLIS} after it, so a parent working in the settings app is not asked for
-     * the password on every single page.
+     * {@link #PIN_WINDOW_MILLIS} after it, which is what lets a parent into the settings menu at
+     * all; once inside, {@link #isSettingsHoldActive()} keeps the menu open while they work there.
      */
     private static final String KEY_PIN_VERIFIED_AT = "parent_pin_verified_at";
+    /**
+     * The 2.5.19 settings hold: the last moment the watcher positively saw one of the protected
+     * settings surfaces while a parent was authenticated. A parent who stays inside the settings menu
+     * keeps refreshing it, so the menu never asks for the PIN again while they are working in it;
+     * stepping out stops the refresh and the hold goes with it.
+     */
+    private static final String KEY_SETTINGS_SEEN_AT = "parent_settings_seen_at";
 
     /** How long one correct parent PIN keeps the settings page free: two minutes. */
     static final long PIN_WINDOW_MILLIS = 2 * 60_000L;
+    /**
+     * How long the settings hold survives without a fresh sighting. The watcher re-stamps every 250 ms
+     * while a settings page is on screen, so this ceiling can never run out during a real visit — it
+     * only stops a recycled or unbound watcher from leaving the settings pages open forever.
+     */
+    static final long SETTINGS_HOLD_MILLIS = 5 * 60_000L;
+    /** Writing {@link #KEY_SETTINGS_SEEN_AT} is a synchronous commit, so it is not done every poll. */
+    private static final long SETTINGS_HOLD_REFRESH_MILLIS = 30_000L;
 
     enum AuthResult { SUCCESS, INCORRECT, COOLDOWN, INVALID }
 
@@ -118,6 +133,7 @@ final class Prefs {
                     .putLong(KEY_LOCKOUT_UNTIL, 0L)
                     .remove(KEY_GRACE_SINCE)
                     .remove(KEY_GRACE_FROM_LOCK)
+                    .remove(KEY_SETTINGS_SEEN_AT)
                     .apply();
             return true;
         }
@@ -352,6 +368,9 @@ final class Prefs {
      * The clock is {@code elapsedRealtime}, so a power cycle restarts it below the stored moment and
      * the window is gone with the previous boot — no flag to clear and no way to inherit a parent's
      * pass across a restart.
+     *
+     * <p>Since 2.5.19 this is only the entry ticket: a parent who is still standing inside the
+     * settings menu is covered by {@link #isSettingsHoldActive()} for as long as they stay there.
      */
     boolean isParentPinWindowActive() {
         long at = sp.getLong(KEY_PIN_VERIFIED_AT, 0L);
@@ -364,6 +383,55 @@ final class Prefs {
             return false;
         }
         return now - at <= PIN_WINDOW_MILLIS;
+    }
+
+    /**
+     * Records that a protected settings surface is on screen right now. Called by the watcher on
+     * every pass, so an uninterrupted visit stays open; the write itself is throttled because
+     * {@link SharedPreferences#edit()}'s commit is synchronous.
+     */
+    void noteSettingsPresence() {
+        long now = SystemClock.elapsedRealtime();
+        long at = sp.getLong(KEY_SETTINGS_SEEN_AT, 0L);
+        if (at > 0L && now >= at && now - at < SETTINGS_HOLD_REFRESH_MILLIS) {
+            return;
+        }
+        sp.edit().putLong(KEY_SETTINGS_SEEN_AT, now).commit();
+    }
+
+    /** The settings hold is over: the family looked at something other than the settings menu. */
+    void clearSettingsHold() {
+        if (sp.contains(KEY_SETTINGS_SEEN_AT)) {
+            sp.edit().remove(KEY_SETTINGS_SEEN_AT).apply();
+        }
+    }
+
+    /**
+     * Whether the family is still sitting in the settings menu under a PIN they already paid. The
+     * stamp doubles as the power-cycle test: a boot clock below the last sighting means the
+     * television was switched off, and a hold cannot be carried across a boot.
+     */
+    boolean isSettingsHoldActive() {
+        long at = sp.getLong(KEY_SETTINGS_SEEN_AT, 0L);
+        if (at <= 0L) {
+            return false;
+        }
+        long now = SystemClock.elapsedRealtime();
+        if (now < at) {
+            sp.edit().remove(KEY_SETTINGS_SEEN_AT).apply();
+            return false;
+        }
+        return now - at <= SETTINGS_HOLD_MILLIS;
+    }
+
+    /**
+     * Whether the settings pages may be entered without the parent PIN: inside the two minutes a
+     * correct PIN buys, or while the family is still inside the settings menu under those minutes.
+     * This covers the settings gate only — the quota lock is answered by
+     * {@link #isGuardActive()}, which never asks about this.
+     */
+    boolean isSettingsGateFree() {
+        return isParentPinWindowActive() || isSettingsHoldActive();
     }
 
     /**
