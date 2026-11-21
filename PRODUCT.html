@@ -1,15 +1,68 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>tv-kids-guard</title>
-<style>html{color-scheme:dark}body{margin:0;background:#10151e;color:#e8edf5;font:16px/1.8 sans-serif}main{max-width:960px;margin:auto;padding:32px 24px 64px}h1{font-size:28px;line-height:1.35}h2{font-size:22px;margin-top:32px}p,li{overflow-wrap:anywhere}li+li{margin-top:8px}a{color:#9ab9ff}a:focus-visible,summary:focus-visible{outline:2px solid #9ab9ff;outline-offset:4px}code,pre{font-family:monospace;font-size:.9em}code{background:#1b2432;padding:2px 4px;border-radius:4px}details{padding:12px 16px;background:#1b2432;border:1px solid #354154;border-radius:10px}summary{cursor:pointer}pre{overflow:auto;line-height:1.5}.table-wrap{overflow:auto}table{border-collapse:collapse;width:100%}th,td{padding:8px 12px;border:1px solid #354154;text-align:left}footer{margin-top:40px;color:#a5b1c4;font-size:14px}@media(max-width:600px){main{padding:20px 16px 40px}h1{font-size:25px}}@media print{html{color-scheme:light}body{background:white;color:black;font-size:11pt}main{max-width:none;padding:0}a{color:inherit}code,details{background:transparent}pre{white-space:pre-wrap}h2{break-after:avoid}li,tr{break-inside:avoid}details{display:none}footer{color:#444}}</style>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0 auto; max-width: 46rem; padding: 2.5rem 1.25rem 4rem;
+    font: 16px/1.75 -apple-system, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+    color: #1c1f23; background: #fff;
+  }
+  h1 { font-size: 1.9rem; margin: 0 0 1.2rem; letter-spacing: -0.01em; }
+  h2 { font-size: 1.25rem; margin: 2.4rem 0 .8rem; padding-bottom: .35rem; border-bottom: 1px solid #e5e8eb; }
+  h3 { font-size: 1.05rem; margin: 1.6rem 0 .5rem; }
+  p, li { color: #33383e; }
+  a { color: #2057ad; overflow-wrap: anywhere; }
+  img { display: block; max-width: 100%; height: auto; border-radius: 8px; }
+  .table-scroll { overflow-x: auto; margin: 1.2rem 0; }
+  table { width: 100%; border-collapse: collapse; text-align: left; font-size: .92em; }
+  th, td { min-width: 5rem; padding: .65rem .8rem; border: 1px solid #e5e8eb; vertical-align: top; }
+  th { background: #f6f8fa; }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .88em; background: #f2f4f6; padding: .15em .4em; border-radius: 4px;
+  }
+  pre {
+    background: #f6f8fa; border: 1px solid #e5e8eb; border-radius: 8px;
+    padding: 1rem 1.1rem; overflow-x: auto; line-height: 1.6;
+  }
+  pre code { background: none; padding: 0; font-size: .85em; }
+  ul { padding-left: 1.3rem; }
+  li { margin: .35rem 0; }
+  strong { color: #14181c; }
+  @media (prefers-color-scheme: dark) {
+    body { color: #e6e9ec; background: #14171a; }
+    p, li { color: #c3c9d0; }
+    strong { color: #fff; }
+    a { color: #9bbaff; }
+    th, td { border-color: #2a3037; }
+    th { background: #1b1f24; }
+    h2 { border-color: #2a3037; }
+    code { background: #23282e; color: #e6e9ec; }
+    pre { background: #1b1f24; border-color: #2a3037; }
+  }
+  @media print {
+    :root { color-scheme: light; }
+    body { max-width: none; padding: 0; color: #000; background: #fff; }
+    p, li, strong, a { color: #000; }
+    code, pre, th { color: #000; background: #f6f8fa; }
+    h2, th, td, pre { border-color: #ccc; }
+    .table-scroll { overflow: visible; }
+    th, td { min-width: 0; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+    pre, img, tr { page-break-inside: avoid; }
+    h2, h3 { page-break-after: avoid; }
+  }
+</style>
 </head>
-<body><main>
+<body>
+
 <h1>tv-kids-guard</h1>
 <h2>Platform</h2>
-<p>android；原生 Android TV，Java 与 XML Views。</p>
+<p>android；原生 Android TV，Java 与 XML Views；配套的局域网 HTTP 家长后台运行于电视，端口 8888。</p>
 <h2>目标与使用场景</h2>
 <p>帮助家庭管理孩子每天看电视的时间。家长在 Android TV 上使用实体遥控器进入管理面板，查看今天已看时长、每日额度与防护状态，调整规则或处理当前观看。</p>
 <h2>已确认的交互约束</h2>
@@ -38,9 +91,9 @@
   <li>管理面板支持两位数字快捷码，也支持方向键选择、OK 确认；修改密码需再次验证家长密码。</li>
   <li>时长输入显示数字，通过屏幕「确认」按钮或实体数字键输入后的 OK 确认；临时加时只对今天生效，不更改每日额度。</li>
 </ul>
-<p>锁屏默认聚焦「家长管理」按钮，按 OK 进入家长验证，验证成功后仅打开管理面板。从该按钮出发，数字键已检测到时屏幕上没有数字盘也没有图标，直接按数字键即可，锁屏在任何焦点位置都收得到数字；判定不出来时，按方向下或右选中数字键盘图标，按 OK 才展开数字盘。在锁屏直接输入家长密码并确认同样只打开管理面板：不送出一天的时长，锁屏仍在面板之下，返回取消输入也不会解除锁定。</p>
+<p>锁屏默认聚焦「家长管理」；实体数字键和屏幕数字盘的识别方式不变。2.6.4 起，正确的已配置电视家长密码立即解除当前锁定并进入管理面板，不改每日额度、已看或加时。出厂密码仅进入设置流程，保存新密码后关闭面板不会自动解锁；网页登录、取消、错误或未完成输入均不解锁。</p>
 <h2>管理操作</h2>
-<div class="table-wrap" tabindex="0"><table><thead><tr>
+<div class="table-scroll" tabindex="0"><table><thead><tr>
 <th scope="col">快捷码</th>
 <th scope="col">操作</th>
 <th scope="col">含义</th>
@@ -54,12 +107,40 @@
 <tr><td>44</td><td>关闭防护</td><td>经确认停止管控，保留时长和密码设置</td></tr>
 <tr><td>55</td><td>开启防卸载</td><td>在系统确认页启用设备管理员，增加直接卸载限制；仍需设置保护</td></tr>
 <tr><td>99</td><td>启用防护</td><td>恢复已保存的管控规则</td></tr>
-<tr><td> 77 </td><td> 清零今天已看 </td><td> 今天已看归零，每日额度与临时加时不变；锁屏因额度完整而解除 </td></tr>
+<tr><td>77</td><td>清零今天已看</td><td>今天已看归零，每日额度与临时加时不变；锁屏因额度完整而解除</td></tr>
 </tbody></table></div>
 <p>操作按真实状态显示，隐藏操作不能通过快捷码绕过可用性检查。概览保持精简，但真实的权限、服务和更新错误必须保留。</p>
 <h2>设计范围</h2>
 <p>家长管理面板采用 Preline 启发的克制暗色界面，原有卡片对齐和布局不变。用户已拒绝过亮、刺眼的浅色方向；验证门页和锁屏保留已有独立主题及授权语义，仅补齐原生数字盘交互。具体原生视觉规范见 <a href="DESIGN.md">DESIGN.md</a>。</p>
 <p>小米电视 2 的实机遥控验收仍待 ADB 恢复，不将自动化结果或原生渲染预览表述为小米实机验证。</p>
-<footer>本文是 <a href="PRODUCT.md">PRODUCT.md</a> 的独立 HTML 阅读与打印版本，不是应用界面。</footer>
-</main></body>
+<h2>2.6.0 的跨天恢复与网页控制</h2>
+<ul>
+  <li>计时服务按持久计费日同步内存，其他读取抢先换日也不会把昨日用量写回。昨天的家长宽限在任何相关读取时结束；次日按原每日额度重新计时、用尽锁定。44 显式关闭防护仍为持久停用。</li>
+  <li>电视本机提供端口 8888 的 HTTP 后台，独立账号默认为 admin/admin，可修改用户名和密码。网页会话与电视家长会话分离，登录不发放家长宽限或设置通行证。</li>
+  <li>网页保留相同菜单编号与可用性；00 仅退出网页，11 修改电视密码需验证旧电视密码；网页登录账号有单独的修改入口。13 的更新安装与 55 的设备管理员启用仍需要电视上的系统确认。关闭防护后网页服务保持可用。</li>
+</ul>
+<p>2.6.1（versionCode 52）补强立即锁定：撤销电视家长会话、设置通行窗口和面板租约，清空旧锁屏输入；旧面板的返回与 00 不能重新发放宽限。网页操作会丢弃操作之前的轮询结果，在新状态读取完成后显示成功。网页新密码不设位数要求，只要求非空、两次一致。</p>
+<p>2.6.2（versionCode 53）补强窗口覆盖：锁定标记与画面覆盖分别验证，锁屏/密码页只有在首帧已画出、窗口持有焦点时接管遮罩；锁屏须持续续报可见状态，失焦、停止、销毁或超时即恢复遮罩。密码页慢启动期间保留遮罩，启动失败或超时重新拉回锁屏。正确密码之后交接到管理面板的既有授权保持。</p>
+<p>2.6.3（versionCode 54）重排网页后台：暗色方向保留，<code>33</code> / <code>22</code> / <code>12</code> / <code>77</code> 常用操作与安全、系统维护分组，网页账号在独立区域展开紧凑表单。登录页只保留必要表单，移除默认账号说明和 HTTP 技术文案；同步提示只在失败时显示，账号更新成功使用简短反馈。手机输入框为 16px 字号、44px 高。接口、电视原生行为和已有网页账号数据保持；网页新密码仍只要求非空、两次一致，不设长度限制。</p>
+<h2>2.6.4–2.6.5 正确密码解锁与运行时一致性</h2>
+<ul>
+  <li>所有默认进程中的管控、网页服务、无障碍服务与家长界面共用同一运行时。2.6.5 在应用私有文件的启动锁内重新查询进程，只结束同 UID、同默认进程名的其他实例，防止静态会话和管控状态分离；不依赖旧电视可能禁止读取的其他进程 <code>/proc</code> 信息或 PID 顺序。</li>
+  <li>锁屏直接输入与独立验证页两条入口都在正确 configured PIN 验证后立即解除本次锁定；2.5.12 至 2.6.3 的“先开面板、退出后再放行”不再是当前规则。已有放行不会被返回或 00 覆盖，首次设置不会制造放行。</li>
+  <li>待机、跨日、再次 33 会撤销旧授权或放行；次日仍按每日额度重新计时，不要求一开机就锁屏。认证先处理日期，避免跨午夜完成密码时把刚通过的会话撤销，或错误延后新日的额度锁。</li>
+  <li>网页删除全部按钮说明和表单解释，仅保留标题、字段、状态、按钮和真实错误；2.6.5 采用固定导航与对应页常驻表单，不再在操作按钮上方展开共享编辑器。时长、密码、确认和状态刷新接口语义不变。</li>
+</ul>
+<p>2.6.6（versionCode 57）按用户要求将网页改为固定白底、深色文字与左侧菜单、右侧内容的布局；手机也保留左右结构，表单改为单列。电视原生界面与密码、时长、锁定规则保持。</p>
+<p>2.6.7（versionCode 58）：电视菜单 00 改为「返回电视」。首次进入及复用面板认证返回时默认聚焦 00，避免密码自动提交后补按确认误进时长编辑；默认每日 30 分钟，12 仍可主动修改。77 保持与两列菜单中的其他按钮同宽，仅占左半列。授权、锁定与时长数据规则保持。</p>
+<h2>2.6.8 授权与并发边界</h2>
+<ul>
+  <li>放行、PIN 窗口与设置访问绑定 Android 开机计数或内核 boot UUID；新开机不会因 uptime 已超过旧授权时间而继承放行，同 boot 的进程回收保留已验证授权。两种标识均不可用时，跨进程旧授权拒绝继承；当前进程的新授权不因迟到 BOOT 广播被撤销。</li>
+  <li>33 同步清除独立密码页的半截输入、首次设置阶段和过期交接，必须在本次锁定后完整输入密码。</li>
+  <li>网页保存首个配置 PIN 成功时立即废除出厂密码派生的旧会话、设置窗口与设置页输入，旧设置页不能覆盖或绕过新 PIN；正常本机首次设置仍可完成。</li>
+  <li>本机加时提交读取最新剩余额度；网页并发加时不使进程崩溃，不超额，也不按旧额度错误拒绝。</li>
+  <li>网页解除管理员标记绑定原网页授权与短期截止时间；合法 44 回调不误弹密码页，外部停用仍需验证。</li>
+  <li>旧网页请求的迟到 401 不影响新登录；当前会话真实 401 仍退出并显示原错误。首次状态读取失败时仍能退出网页登录。</li>
+  <li>原生菜单和数字输入框将 TV_POWER 交还系统，过期面板也不先抢去验证。</li>
+</ul>
+
+</body>
 </html>

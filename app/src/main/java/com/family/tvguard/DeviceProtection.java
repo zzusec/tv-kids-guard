@@ -6,6 +6,7 @@ import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.UserManager;
@@ -80,6 +81,22 @@ final class DeviceProtection {
     /** An active administrator blocks direct removal, but Settings can deactivate it first. */
     static boolean isUninstallProtected(Context ctx) {
         return isUninstallBlocked(ctx) || isAdminActive(ctx);
+    }
+
+    /** Offer activation only when the firmware supports it and supplies its confirmation page. */
+    static boolean canActivateAdmin(Context ctx) {
+        String operation = "查询设备管理员支持";
+        try {
+            PackageManager packages = ctx.getPackageManager();
+            boolean supported = dpm(ctx) != null
+                    && packages.hasSystemFeature(PackageManager.FEATURE_DEVICE_ADMIN)
+                    && packages.resolveActivity(activationIntent(ctx), 0) != null;
+            clearError(operation);
+            return supported;
+        } catch (RuntimeException e) {
+            recordError(operation, e);
+            return false;
+        }
     }
 
     /** System confirmation page that activates the administrator; never activates it silently. */
@@ -208,6 +225,16 @@ final class DeviceProtection {
         if (!AdminSession.isRemovalInProgress() || !AdminSession.isMaintenanceActive()) {
             return new RemovalResult(false, false, "请先输入家长密码并确认解除。");
         }
+        return removeAuthenticated(ctx);
+    }
+
+    static synchronized RemovalResult removeFromWeb(Context ctx, ParentWebController.Authorization auth) {
+        auth.require();
+        return removeAuthenticated(ctx);
+    }
+
+    @SuppressWarnings("deprecation")
+    private static RemovalResult removeAuthenticated(Context ctx) {
         String operation = "检查解除管理条件";
         try {
             DevicePolicyManager manager = dpm(ctx);

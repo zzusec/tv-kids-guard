@@ -77,20 +77,12 @@
                         android:layout_marginTop="12dp"
                         android:gravity="center"
                         android:minHeight="48dp"
-                        android:textColor="@color/accent_light"
-                        android:textSize="32sp" />
-
-                    <Button
-                        android:id="@+id/parent_manage"
-                        style="@style/Widget.PillButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="48dp"
-                        android:layout_gravity="center_horizontal"
-                        android:layout_marginTop="12dp"
                         android:focusable="true"
                         android:focusableInTouchMode="true"
-                        android:tag="parent_manage"
-                        android:text="家长管理" />
+                        android:tag="password_entry"
+                        android:contentDescription="家长密码输入"
+                        android:textColor="@color/accent_light"
+                        android:textSize="32sp" />
 
                 </LinearLayout>
 

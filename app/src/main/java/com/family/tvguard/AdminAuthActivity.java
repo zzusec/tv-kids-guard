@@ -34,14 +34,18 @@ public class AdminAuthActivity extends Activity {
     private boolean visible;
     private boolean openingConsole;
     private boolean authorizedSetup;
+    private WindowVisibility windowVisibility;
 
     static void launch(Context ctx) {
+        GuardService service = GuardService.get();
+        if (service != null) service.beginParentUiLaunch();
         Intent intent = new Intent(ctx, AdminAuthActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP
                 | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
         try {
             ctx.startActivity(intent);
         } catch (Exception e) {
+            if (service != null) service.cancelParentUiLaunch();
             GuardService.reportFailure("家长认证界面启动失败", e);
         }
     }
@@ -50,30 +54,58 @@ public class AdminAuthActivity extends Activity {
         return instance != null && instance.visible;
     }
 
+    /** A new explicit lock cannot accept input or a handover that began before that lock. */
+    static void invalidateForLock() {
+        AdminAuthActivity current = instance;
+        if (current == null) return;
+        current.input.setLength(0);
+        current.firstPin = null;
+        current.stage = CHECK;
+        current.authorizedSetup = false;
+        current.openingConsole = false;
+        current.error = "";
+        current.render();
+        if (current.visible && current.inputMode != null) current.inputMode.focusEntry();
+    }
+
     private final Runnable ticker = new Runnable() {
         @Override
         public void run() {
-            if (authorizedSetup && !AdminSession.isActive()) {
-                stage = CHECK;
-                firstPin = null;
-                input.setLength(0);
-                authorizedSetup = false;
-                error = "授权已过期，请重新验证";
-            }
-            GuardService service = GuardService.get();
-            if (service != null) {
-                service.setParentUiVisible(true);
-            }
+            validateSetupAuthorization();
             render();
             handler.postDelayed(this, 1000L);
         }
     };
+
+    /** Factory-PIN proof is valid only while this device still needs its first configured PIN. */
+    private boolean validateSetupAuthorization() {
+        if (!authorizedSetup) return true;
+        boolean active = AdminSession.isActive();
+        boolean needsSetup = prefs.needsPasswordSetup();
+        if (active && needsSetup) return true;
+        AdminSession.revoke();
+        prefs.clearParentPinWindow();
+        prefs.clearSettingsHold();
+        stage = CHECK;
+        firstPin = null;
+        input.setLength(0);
+        authorizedSetup = false;
+        error = needsSetup ? "授权已过期，请重新验证" : "家长密码已更新，请重新验证";
+        return false;
+    }
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         instance = this;
         prefs = new Prefs(this);
+        windowVisibility = new WindowVisibility(this, visible -> {
+            GuardService service = GuardService.get();
+            if (service != null && (visible || !openingConsole)) {
+                service.setParentUiVisible(visible);
+            }
+        });
+        ParentWebService.start(this);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
                 | WindowManager.LayoutParams.FLAG_SECURE);
         setContentView(R.layout.gate_screen);
@@ -128,6 +160,7 @@ public class AdminAuthActivity extends Activity {
         super.onResume();
         inputMode.refresh();
         visible = true;
+        validateSetupAuthorization();
         if (AdminSession.isActive() && !prefs.needsPasswordSetup()) {
             openConsole();
             return;
@@ -136,10 +169,7 @@ public class AdminAuthActivity extends Activity {
             stage = NEW_PIN;
             authorizedSetup = true;
         }
-        GuardService service = GuardService.get();
-        if (service != null) {
-            service.setParentUiVisible(true);
-        }
+        windowVisibility.start();
         handler.removeCallbacks(ticker);
         handler.post(ticker);
     }
@@ -147,6 +177,7 @@ public class AdminAuthActivity extends Activity {
     @Override
     protected void onPause() {
         visible = false;
+        if (windowVisibility != null) windowVisibility.stop();
         handler.removeCallbacks(ticker);
         GuardService service = GuardService.get();
         if (service != null && !openingConsole) {
@@ -166,11 +197,22 @@ public class AdminAuthActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (windowVisibility != null) windowVisibility.stop();
         handler.removeCallbacksAndMessages(null);
         if (instance == this) {
             instance = null;
         }
         super.onDestroy();
+    }
+
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (windowVisibility != null) windowVisibility.focusChanged(hasFocus);
+    }
+
+    @Override protected void onStop() {
+        if (windowVisibility != null) windowVisibility.stop();
+        super.onStop();
     }
 
     @Override
@@ -238,8 +280,9 @@ public class AdminAuthActivity extends Activity {
         if (prefs.lockoutRemainingSeconds() > 0L || openingConsole) {
             return;
         }
+        if (!validateSetupAuthorization()) return;
         if (input.length() != Prefs.PASSWORD_LENGTH) {
-            error = "请输入 6 位数字密码";
+            error = input.length() == 0 ? "" : "密码未输完整";
             return;
         }
         String value = input.toString();
@@ -256,6 +299,7 @@ public class AdminAuthActivity extends Activity {
                 authorizedSetup = true;
                 error = "";
             } else {
+                GuardService.releaseAfterParentPin(this);
                 openConsole();
             }
         } else if (!AdminSession.isActive()) {
@@ -276,6 +320,7 @@ public class AdminAuthActivity extends Activity {
         } else {
             try {
                 prefs.setPassword(value);
+                authorizedSetup = false;
                 firstPin = null;
                 openConsole();
             } catch (IllegalStateException e) {
@@ -311,7 +356,7 @@ public class AdminAuthActivity extends Activity {
             input.setLength(0);
             prompt.setText("错误次数过多，请等待 " + wait + " 秒");
         } else {
-            String message = stage == NEW_PIN ? "请输入新的 6 位数字密码"
+            String message = stage == NEW_PIN ? "请输入新的 6 位家长密码"
                     : stage == CONFIRM_PIN ? "请再次输入新密码确认"
                     : prefs.needsPasswordSetup() ? "请输入原密码后设置新密码\n首次安装请用说明书中的出厂密码"
                     : "请输入 6 位家长密码";

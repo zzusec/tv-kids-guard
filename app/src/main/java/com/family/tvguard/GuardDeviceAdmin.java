@@ -18,7 +18,8 @@ public class GuardDeviceAdmin extends DeviceAdminReceiver {
     @Override
     public void onDisabled(Context context, Intent intent) {
         Prefs prefs = new Prefs(context);
-        if (!prefs.isProtectionEnabled() || AdminSession.isRemovalInProgress()) {
+        if (!prefs.isProtectionEnabled() || AdminSession.isRemovalInProgress()
+                || ParentWebController.hasAuthorizedAdminRemoval()) {
             return;
         }
         AdminSession.revoke();

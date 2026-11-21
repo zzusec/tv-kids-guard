@@ -51,8 +51,9 @@ import static org.robolectric.Shadows.shadowOf;
  * television next stands by, so the quota lock stays off. The settings page is a separate rule:
  * since 2.5.18 it costs a PIN again once the two minutes that the last correct PIN bought are up.
  *
- * <p>The grace buys no allowance and suspends no accounting. It is granted only by leaving the
- * console after a correct PIN, it never touches the daily limit, the bonus or the lock flag except
+ * <p>The grace buys no allowance and suspends no accounting. A correct configured PIN now grants
+ * it immediately when releasing a lock; leaving the console must preserve that release. It never
+ * touches the daily limit, the bonus or the lock flag except
  * to stand the lock down, and whatever is watched during it keeps counting into the day. It ends at
  * standby, at {@code 33 立即锁定}, with a new calendar day, and with a power cycle - a grace that
  * survived the television being switched off would be the 今天不限时 that 2.5.12 removed.
@@ -124,8 +125,9 @@ public class ParentGraceTest {
     // ---------------------------------------------------------- how it is granted
 
     @Test
-    public void backingOutOfTheConsoleStartsTheParentGrace() {
+    public void backingOutOfTheConsolePreservesThePinGrantedGrace() {
         MainActivity panel = openConsole();
+        assertTrue("验证成功时已经解除锁定，不应等退出面板才发宽限", prefs.isParentGraceDeferringLock());
 
         panel.onBackPressed();
 
@@ -138,12 +140,14 @@ public class ParentGraceTest {
     }
 
     @Test
-    public void closingThePanelByShortcutAlsoStartsTheParentGrace() {
+    public void closingThePanelByShortcutPreservesThePinGrantedGrace() {
         MainActivity panel = openConsole();
+        assertTrue(prefs.isParentGraceDeferringLock());
 
         enterDigits(panel, "00");
 
         assertTrue("00 关闭面板和返回键是同一条出路", prefs.isParentGraceActive());
+        assertTrue("00不得把锁屏来源的宽限覆盖成普通面板宽限", prefs.isParentGraceDeferringLock());
         assertTrue(panel.isFinishing());
         assertTrue(startedHome());
         assertFalse(activityStarted(LockActivity.class));
@@ -221,7 +225,7 @@ public class ParentGraceTest {
         service().setDailyLimitMinutes(Prefs.DEFAULT_LIMIT_MINUTES + 30);
         assertFalse("额度还剩时锁屏解除", service().isLocked());
         panel.onBackPressed();
-        assertTrue(prefs.isParentGraceActive());
+        assertFalse("修改每日额度必须结束旧宽限，后续按新额度锁定", prefs.isParentGraceActive());
         window(SETTINGS_APP);
         assertFalse(activityStarted(AdminAuthActivity.class));
 
@@ -259,10 +263,11 @@ public class ParentGraceTest {
     @Test
     public void standbyDuringTheGraceIsNotViewingTime() {
         openConsole().onBackPressed();
-        long before = prefs.getUsedSeconds();
-
         power.setIsInteractive(false);
         deliver(Intent.ACTION_SCREEN_OFF);
+        // Screen-off flushes time accrued after verification but before standby. Measure the
+        // persisted baseline at that boundary, not a potentially five-second-old preference.
+        long before = prefs.getUsedSeconds();
         ShadowLooper.idleMainLooper(2, TimeUnit.SECONDS);
         power.setIsInteractive(true);
         deliver(Intent.ACTION_SCREEN_ON);
@@ -275,13 +280,15 @@ public class ParentGraceTest {
     public void aGraceOnADayWithAllowanceLeftDoesNotPostponeTheLock() {
         // The boundary hx10 did not ask to move: leaving the console when nothing was locked cannot
         // defer a lock the child has not reached yet.
-        MainActivity panel = openConsole();
+        AdminSession.grant();
         service().setDailyLimitMinutes(Prefs.DEFAULT_LIMIT_MINUTES + 30);
+        AdminSession.revoke();
         assertFalse("加额度即解除锁屏", service().isLocked());
+        MainActivity panel = openConsole();
 
         panel.onBackPressed();
 
-        assertTrue(prefs.isParentGraceActive());
+        assertFalse("未从锁屏验证时，退出面板不能凭空制造放行宽限", prefs.isParentGraceActive());
         assertFalse("额度还剩时宽限不推迟后来的锁", prefs.isParentGraceDeferringLock());
 
         closePanel();
@@ -413,11 +420,15 @@ public class ParentGraceTest {
 
     private MainActivity openConsole() {
         closePanel();
-        // The console is only ever reached through a correct parent PIN: the gate authenticates,
-        // grants the session and hands the panel over. That PIN is also what buys the 2.5.18
-        // two-minute settings window, so a harness that skipped it would not match the television.
-        assertEquals(Prefs.AuthResult.SUCCESS, prefs.authenticate("135790"));
-        AdminSession.grant();
+        // Exercise the actual configured-PIN entry point: it now releases an existing quota lock
+        // before the console is even created. Replacing this with AdminSession.grant() would miss
+        // the bug where the console's exit overwrites an already-active from-lock grace.
+        ActivityController<AdminAuthActivity> gate = Robolectric.buildActivity(AdminAuthActivity.class)
+                .create().start().resume().visible().windowFocusChanged(true);
+        enterDigits(gate.get(), "135790");
+        assertTrue(AdminSession.isActive());
+        assertTrue(gate.get().isFinishing());
+        gate.pause().stop().destroy();
         panelController = Robolectric.buildActivity(MainActivity.class)
                 .create().start().resume().visible().windowFocusChanged(true);
         ShadowLooper.idleMainLooper(1500, TimeUnit.MILLISECONDS);

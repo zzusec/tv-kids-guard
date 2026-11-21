@@ -98,7 +98,8 @@ public class LockRemoteTest {
         for (char digit : "135790".toCharArray()) {
             press(KeyEvent.KEYCODE_0 + digit - '0');
         }
-        assertTrue(service.isLocked());
+        assertFalse("正确实体PIN必须立即解除本次锁定", service.isLocked());
+        assertTrue(prefs.isParentGraceDeferringLock());
         assertTrue(AdminSession.isActive());
         assertEquals(MainActivity.class.getName(), shadowOf(activity).getNextStartedActivity()
                 .getComponent().getClassName());
@@ -123,13 +124,13 @@ public class LockRemoteTest {
     }
 
     @Test
-    public void emptyOkOpensTheParentGateWithoutUnlockingQuota() {
-        View parent = activity.getWindow().getDecorView().findViewWithTag("parent_manage");
-        assertNotNull(parent);
-        assertTrue(parent.hasFocus());
+    public void emptyOkStaysOnTheOnlyPasswordInputWithoutUnlockingQuota() {
+        assertNull(activity.getWindow().getDecorView().findViewWithTag("parent_manage"));
+        assertTrue(activity.findViewById(R.id.lock_input).hasFocus());
+        while (shadowOf(activity).getNextStartedActivity() != null) { /* startup lock launch */ }
         press(KeyEvent.KEYCODE_DPAD_CENTER);
 
-        assertNotNull(shadowOf(activity).getNextStartedActivity());
+        assertNull(shadowOf(activity).getNextStartedActivity());
         assertTrue(service.isLocked());
         assertFalse(AdminSession.isActive());
     }

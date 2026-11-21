@@ -166,7 +166,7 @@ public class SettingsGateLoopTest {
     }
 
     @Test
-    public void quotaLockStaysOffTheParentPanelAndReturnsWhenTheParentLeaves() {
+    public void configuredPinReleasesTheQuotaLockUntilItsGraceEnds() {
         // The daily allowance is spent, so the lock is armed for any window of the television.
         prefs.setUsedSeconds(Prefs.DEFAULT_LIMIT_MINUTES * 60L);
         assertTrue(prefs.isGuardActive());
@@ -175,14 +175,16 @@ public class SettingsGateLoopTest {
         assertTrue("时长用完后设置页先被时长锁屏挡住", activityStarted(LockActivity.class));
         markBaseline();
 
-        // The parent reaches the panel through 家长管理, which grants a session but buys no viewing
-        // time, so the lock stays armed underneath the whole visit.
+        // Correct configured-PIN verification immediately releases this lock without modifying
+        // the allowance. The release must survive the panel being shown and then left.
         gateController = Robolectric.buildActivity(AdminAuthActivity.class)
                 .create().start().resume().visible().windowFocusChanged(true);
         AdminAuthActivity gate = gateController.get();
         assertNotNull(gate);
         typePin(gate);
         assertTrue("正确的密码必须建立家长会话", AdminSession.isActive());
+        assertTrue("正确密码必须立即获得本次解锁宽限", prefs.isParentGraceDeferringLock());
+        assertFalse(prefs.isGuardActive());
         gateController.pause().stop().destroy();
         gateController = null;
 
@@ -202,14 +204,21 @@ public class SettingsGateLoopTest {
         assertFalse("家长面板在屏时时长锁屏不得抢前台", activityStarted(LockActivity.class));
         assertFalse("家长面板在屏时不得再次弹出验证页", activityStarted(AdminAuthActivity.class));
 
-        // Once the parent leaves, the very next window is locked again: the panel is not a pass.
+        // Leaving the panel does not undo a lock the parent already released with the PIN.
         panelController.pause().stop().destroy();
         panelController = null;
         markBaseline();
 
         window("video.player");
 
-        assertTrue("家长离开面板后时长锁屏必须回来", activityStarted(LockActivity.class));
+        assertFalse("正确密码放行后不能一退出面板就锁回", activityStarted(LockActivity.class));
+        assertTrue(prefs.isParentGraceDeferringLock());
+        // This watcher-only fixture observes the end of a grace; the timing service's actual
+        // standby/new-day boundaries are exercised by ConfiguredPinUnlockTest.
+        prefs.endParentGrace();
+        markBaseline();
+        window("video.player");
+        assertTrue("宽限结束后仍必须恢复额度锁屏", activityStarted(LockActivity.class));
     }
 
     private void typePin(AdminAuthActivity gate) {

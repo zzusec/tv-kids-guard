@@ -505,9 +505,8 @@ public class ParentPinWindowTest {
     }
 
     @Test
-    public void standbyEndsTheGraceButNotTheSettingsWindow() {
-        // The two rules own different screens: the 2.5.17 grace dies at standby, the two minutes are
-        // a clock that the parent's own PIN started, and the television staying on is not a boot.
+    public void standbyEndsBothTheGraceAndTheSettingsWindow() {
+        // A new viewing session must not inherit the previous parent's settings authorization.
         prefs.setUsedSeconds(Prefs.DEFAULT_LIMIT_MINUTES * 60L);
         prefs.setLocked(true);
         prefs.startParentGrace(true);
@@ -519,7 +518,7 @@ public class ParentPinWindowTest {
         ShadowLooper.idleMainLooper();
 
         assertFalse("待机花掉宽限", prefs.isParentGraceActive());
-        assertTrue("两分钟窗口按自己的时钟走", prefs.isParentPinWindowActive());
+        assertFalse("待机后进入设置需要重新验证家长密码", prefs.isParentPinWindowActive());
     }
 
     @Test

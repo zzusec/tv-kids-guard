@@ -449,6 +449,20 @@ public final class UpdateManager {
             }
             return;
         }
+        // "latest" can roll back to an intermediate release that is still newer than the
+        // installed app. Keep the newer cached candidate, but only after revalidating it.
+        if (previous.getInt("readyVersion", 0) > metadata.versionCode) {
+            try {
+                ReadyUpdate cached = readyUpdate(context, cancellation);
+                if (cached != null && cached.versionCode > metadata.versionCode) {
+                    state(context, "ready", "更新已下载，等待家长安装", cached.versionCode, cached.versionName);
+                    return;
+                }
+            } catch (IOException invalidCache) {
+                cancellation.check();
+                Log.w("TVGuardUpdate", "已有更新无法复用：" + concise(invalidCache));
+            }
+        }
         File apk = apkFile(context, metadata);
         if (apk.isFile()) {
             try {

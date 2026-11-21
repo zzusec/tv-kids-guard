@@ -401,6 +401,9 @@ public class UpdateInstallerTest {
         panel = Robolectric.buildActivity(MainActivity.class).create().start().resume().visible();
         ShadowLooper.idleMainLooper();
         assertTrue(MainActivity.isAuthorizedVisible());
+        Intent web = shadowOf(context).getNextStartedService();
+        assertNotNull(web);
+        assertEquals(ParentWebService.class.getName(), web.getComponent().getClassName());
     }
 
     private void beginInstall() throws Exception {

@@ -122,7 +122,7 @@ public class GuardServiceAuthTest {
 
     @Test
     @Config(sdk = {19, 24, 33})
-    public void configuredParentPinOpensThePanelAndKeepsTheQuotaLock() {
+    public void configuredParentPinImmediatelyReleasesTheLockWithoutChangingQuota() {
         prefs.setPassword("135790");
         GuardService service = startService();
         while (org.robolectric.Shadows.shadowOf(service).getNextStartedActivity() != null) {
@@ -131,9 +131,12 @@ public class GuardServiceAuthTest {
         enterPin(service, "135790");
 
         assertTrue(service.onOk());
-        assertTrue("the PIN proves a parent is present, it does not buy viewing time",
-                service.isLocked());
-        assertTrue(prefs.isGuardActive());
+        assertFalse("正确家长密码必须立即解除本次锁定", service.isLocked());
+        assertFalse(prefs.isGuardActive());
+        assertTrue(prefs.isParentGraceDeferringLock());
+        assertEquals(Prefs.DEFAULT_LIMIT_MINUTES, prefs.getDailyLimitMinutes());
+        assertEquals(Prefs.DEFAULT_LIMIT_MINUTES * 60L, prefs.getUsedSeconds());
+        assertEquals(0L, prefs.getBonusSeconds());
         assertTrue(AdminSession.isActive());
         Intent launched = org.robolectric.Shadows.shadowOf(service).getNextStartedActivity();
         assertNotNull(launched);
@@ -194,7 +197,7 @@ public class GuardServiceAuthTest {
     }
 
     @Test
-    public void emptyOkOpensTheParentGateWithoutStoppingLockTask() {
+    public void emptyOkStaysOnTheLockWithoutStoppingLockTask() {
         assertGateKeepsLockTask(KeyEvent.KEYCODE_DPAD_CENTER);
     }
 
@@ -413,16 +416,14 @@ public class GuardServiceAuthTest {
         LockActivity lock = startLock();
         taskManager.setLockTaskModeState(ActivityManager.LOCK_TASK_MODE_LOCKED);
 
-        // An empty buffer plus OK opens the parent gate without ending Lock Task.
+        // An empty buffer plus OK neither opens another page nor ends Lock Task.
         assertTrue(lock.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, keyCode)));
         assertTrue(lock.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, keyCode)));
 
         assertEquals(0, activityShadow().stopCalls);
         assertEquals(ActivityManager.LOCK_TASK_MODE_LOCKED, activityManager.getLockTaskModeState());
         assertFalse(AdminSession.isActive());
-        Intent started = activityShadow().getNextStartedActivity();
-        assertNotNull(started);
-        assertEquals(AdminAuthActivity.class.getName(), started.getComponent().getClassName());
+        assertNull(activityShadow().getNextStartedActivity());
     }
 
     private GuardService startService() {

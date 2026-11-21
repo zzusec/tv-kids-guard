@@ -73,10 +73,9 @@ public class AppLockService extends AccessibilityService {
     private final Runnable foregroundCheck = new Runnable() {
         @Override
         public void run() {
-            if (prefs != null && prefs.isProtectionEnabled()) {
-                refreshForegroundPackage();
-            }
-            enforceForeground();
+            boolean observed = prefs != null && prefs.isProtectionEnabled()
+                    && refreshForegroundPackage();
+            enforceForeground(observed);
             handler.postDelayed(this, 250L);
         }
     };
@@ -115,12 +114,13 @@ public class AppLockService extends AccessibilityService {
             return;
         }
         foregroundPackage = pkg.toString();
-        enforceForeground();
+        enforceForeground(true);
     }
 
     /** Recover the foreground after reconnecting; never inspect text or traverse child nodes. */
     @SuppressWarnings("deprecation")
-    private void refreshForegroundPackage() {
+    private boolean refreshForegroundPackage() {
+        boolean observed = false;
         try {
             AccessibilityNodeInfo root = getRootInActiveWindow();
             if (root != null) {
@@ -128,6 +128,7 @@ public class AppLockService extends AccessibilityService {
                     CharSequence pkg = root.getPackageName();
                     if (!TextUtils.isEmpty(pkg)) {
                         foregroundPackage = pkg.toString();
+                        observed = true;
                     }
                 } finally {
                     root.recycle();
@@ -140,19 +141,19 @@ public class AppLockService extends AccessibilityService {
             }
             windowError = "当前窗口识别失败，正在重试";
         }
+        return observed;
     }
 
-    /** Maintenance expiration must also close a settings page that never changes windows. */
-    private void enforceForeground() {
+    /** Cached windows remain protected, but only a fresh observation may renew authorization. */
+    private void enforceForeground(boolean observed) {
         if (prefs == null) {
             prefs = new Prefs(this);
         }
         if (!prefs.isProtectionEnabled() || foregroundPackage.isEmpty()) {
             return;
         }
-        if (foregroundPackage.equals(getPackageName()) || foregroundPackage.equals(SYSTEM_UI)) {
-            // The lock screen, the verification page and the system UI are not the family walking
-            // out of the settings menu, so they neither refresh the hold nor spend it.
+        if (foregroundPackage.equals(getPackageName())) {
+            // The guard's own opaque lock/gate remains responsible for its window.
             return;
         }
         // Every visit to a settings page costs a PIN, but the guard never fights its own screens.
@@ -161,14 +162,17 @@ public class AppLockService extends AccessibilityService {
         // Watching that window without this rule pushed a fresh gate over the panel every few
         // hundred milliseconds; the panel's onPause then revoked the session, so the next gate
         // really did demand the password again, forever (BRAVIA 4K 2015, 2.5.7).
-        if (parentUiOnScreen() || AdminSession.isMaintenanceActive()) {
-            refreshSettingsHold();
+        if (parentUiOnScreen() || GuardService.isParentUiStarting() || AdminSession.isMaintenanceActive()) {
+            if (observed) refreshSettingsHold();
             return;
         }
         if (prefs.isGuardActive()) {
             LockActivity.launch(this);
+        } else if (foregroundPackage.equals(SYSTEM_UI)) {
+            // Volume/system dialogs are not a new settings visit, but never exempt a spent quota.
+            return;
         } else if (isSettingsPackage(foregroundPackage)) {
-            refreshSettingsHold();
+            if (observed) refreshSettingsHold();
             // 2.5.18 gave a correct PIN two minutes of free settings; the television reported that a
             // parent working through the menu was locked out by the password page the moment those
             // minutes ran out. Since 2.5.19 the visit itself is the pass: while a settings surface
@@ -264,12 +268,23 @@ public class AppLockService extends AccessibilityService {
 
     @Override
     protected boolean onKeyEvent(KeyEvent event) {
+        if (prefs == null) prefs = new Prefs(this);
+        int code = event.getKeyCode();
+        boolean guardActive = prefs.isGuardActive();
+        if (guardActive && !AdminSession.isMaintenanceActive() && isViewingEscapeKey(code)) {
+            firstZeroElapsed = 0L;
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                Log.i(TAG, "locked_remote_blocked keycode=" + code);
+                LockActivity.launch(this);
+            }
+            // Consume DOWN and UP even if a vendor input/sound window has taken the focus.
+            // Activity.dispatchKeyEvent alone cannot protect keys routed before that activity.
+            return true;
+        }
         if (event.getAction() != KeyEvent.ACTION_DOWN || event.getRepeatCount() > 0) {
             return false;
         }
-        int code = event.getKeyCode();
         boolean zero = code == KeyEvent.KEYCODE_0 || code == KeyEvent.KEYCODE_NUMPAD_0;
-        boolean guardActive = prefs != null && prefs.isProtectionEnabled() && prefs.isGuardActive();
         if (guardActive || AdminSession.isMaintenanceActive()) {
             firstZeroElapsed = 0L;
             return false;
@@ -291,6 +306,38 @@ public class AppLockService extends AccessibilityService {
             firstZeroElapsed = now;
         }
         return false;
+    }
+
+    private static boolean isViewingEscapeKey(int code) {
+        switch (code) {
+            case KeyEvent.KEYCODE_HOME:
+            case KeyEvent.KEYCODE_APP_SWITCH:
+            case KeyEvent.KEYCODE_SETTINGS:
+            case KeyEvent.KEYCODE_TV_INPUT:
+            case KeyEvent.KEYCODE_TV_INPUT_HDMI_1:
+            case KeyEvent.KEYCODE_TV_INPUT_HDMI_2:
+            case KeyEvent.KEYCODE_TV_INPUT_HDMI_3:
+            case KeyEvent.KEYCODE_TV_INPUT_HDMI_4:
+            case KeyEvent.KEYCODE_TV_INPUT_COMPOSITE_1:
+            case KeyEvent.KEYCODE_TV_INPUT_COMPOSITE_2:
+            case KeyEvent.KEYCODE_TV_INPUT_COMPONENT_1:
+            case KeyEvent.KEYCODE_TV_INPUT_COMPONENT_2:
+            case KeyEvent.KEYCODE_TV_INPUT_VGA_1:
+            case KeyEvent.KEYCODE_TV:
+            case KeyEvent.KEYCODE_CHANNEL_UP:
+            case KeyEvent.KEYCODE_CHANNEL_DOWN:
+            case KeyEvent.KEYCODE_LAST_CHANNEL:
+            case KeyEvent.KEYCODE_GUIDE:
+            case KeyEvent.KEYCODE_MEDIA_PLAY:
+            case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+            case KeyEvent.KEYCODE_MEDIA_NEXT:
+            case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
+            case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD:
+            case KeyEvent.KEYCODE_MEDIA_REWIND:
+                return true;
+            default:
+                return false;
+        }
     }
 
     @Override

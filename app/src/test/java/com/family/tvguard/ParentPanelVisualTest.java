@@ -75,7 +75,7 @@ public class ParentPanelVisualTest {
     @Test
     public void enabledPanelHasReadableFocusedTitleAndShortcut() throws Exception {
         start(true);
-        Button button = activity.findViewById(android.R.id.content).findViewWithTag("action_12");
+        Button button = activity.findViewById(android.R.id.content).findViewWithTag("action_00");
         assertTrue(button.hasFocus());
         assertEquals(Color.WHITE, button.getCurrentTextColor());
         Spanned text = (Spanned) button.getText();

@@ -133,7 +133,7 @@ public class RemoteInputScreensTest {
     }
 
     @Test
-    public void padEntryOnTheLockScreenNeitherBuysTimeNorRelinquishesTheLock() {
+    public void configuredPadPinReleasesTheCurrentLockWithoutChangingWatchedTime() {
         prefs.setUsedSeconds(1800L);
         prefs.setLocked(true);
         RemoteInputModeTest.DigitInputDevice.reset();
@@ -145,10 +145,11 @@ public class RemoteInputScreensTest {
         assertNull(activity.getWindow().getDecorView().findViewWithTag("keypad_toggle"));
         assertFalse("The lock screen keeps its clean layout", ScreenRemote.padIsOpen(activity));
         assertTrue(ScreenRemote.offersIcon(activity));
-        // The PIN proves a parent is present: it authorizes the panel, it never buys viewing time.
+        // A correct configured PIN releases this lock immediately, while the quota stays intact.
         ScreenRemote.digits(activity, "135790");
         assertTrue(AdminSession.isActive());
-        assertTrue(service.get().isLocked());
+        assertFalse(service.get().isLocked());
+        assertTrue(prefs.isParentGraceDeferringLock());
         assertEquals(1800L, prefs.getUsedSeconds());
     }
 

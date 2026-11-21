@@ -471,6 +471,45 @@ public class AppLockServiceTest {
     }
 
     @Test
+    public void aMissingRootCannotRenewTheLastSettingsObservationForever() {
+        assertSettingsObservationExpires(false);
+    }
+
+    @Test
+    public void aFailedRootQueryCannotRenewTheLastSettingsObservationForever() {
+        assertSettingsObservationExpires(true);
+    }
+
+    private void assertSettingsObservationExpires(boolean failQuery) {
+        shadowOf((android.os.PowerManager) context.getSystemService(Context.POWER_SERVICE))
+                .setIsInteractive(true);
+        if (android.os.Build.VERSION.SDK_INT >= 20) {
+            android.view.Display display = ((android.view.WindowManager)
+                    context.getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay();
+            shadowOf(display).setState(android.view.Display.STATE_ON);
+        }
+        service.onServiceConnected();
+        assertEquals(Prefs.AuthResult.SUCCESS, prefs.authenticate("135790"));
+        window("com.android.tv.settings");
+        ShadowLooper.idleMainLooper();
+        assertTrue(prefs.isSettingsHoldActive());
+        drainStartedActivities();
+        foregroundRoot(null);
+        if (failQuery) ForegroundAccessibilityShadow.queryFailure =
+                new IllegalStateException("Active window no longer available");
+
+        ShadowLooper.idleMainLooper(Prefs.PIN_WINDOW_MILLIS + Prefs.SETTINGS_HOLD_MILLIS + 1000L,
+                TimeUnit.MILLISECONDS);
+
+        assertFalse("缓存包名不构成新的在场证据，五分钟后必须过期", prefs.isSettingsHoldActive());
+        assertFalse(prefs.isParentPinWindowActive());
+        drainStartedActivities();
+        ForegroundAccessibilityShadow.queryFailure = null;
+        window("com.android.tv.settings");
+        assertGateStarted();
+    }
+
+    @Test
     public void unbindingDoesNotUnlockQuotaAndReconnectionRestoresTheLock() {
         prefs.setUsedSeconds(Prefs.DEFAULT_LIMIT_MINUTES * 60L);
         service.onServiceConnected();

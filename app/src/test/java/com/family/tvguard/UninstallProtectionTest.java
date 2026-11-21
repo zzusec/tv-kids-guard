@@ -6,6 +6,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.ResolveInfo;
+import android.content.pm.PackageManager;
+import android.view.View;
+import android.widget.TextView;
 
 import org.junit.After;
 import org.junit.Before;
@@ -109,6 +112,54 @@ public class UninstallProtectionTest {
 
         assertNull(shadowOf(activity).getNextStartedActivity());
         assertFalse(DeviceProtection.isAdminActive(context));
+        assertUnsupportedPanel(activity);
+    }
+
+    @Test
+    public void declaredFeatureWithoutASystemConfirmationPageDoesNotOfferActivation() {
+        shadowOf(context.getPackageManager()).setSystemFeature(PackageManager.FEATURE_DEVICE_ADMIN, true);
+        MainActivity activity = startPanel();
+        assertUnsupportedPanel(activity);
+        enterDigits(activity, "55");
+        assertNull(shadowOf(activity).getNextStartedActivity());
+        assertFalse(AdminSession.isMaintenanceActive());
+    }
+
+    @Test
+    public void aConfirmationPageWithoutDeviceAdminSupportDoesNotOfferActivation() {
+        registerAdminPage();
+        shadowOf(context.getPackageManager()).setSystemFeature(PackageManager.FEATURE_DEVICE_ADMIN, false);
+        MainActivity activity = startPanel();
+        assertUnsupportedPanel(activity);
+        enterDigits(activity, "55");
+        assertNull(shadowOf(activity).getNextStartedActivity());
+        assertFalse(AdminSession.isMaintenanceActive());
+    }
+
+    @Test
+    public void supportedButInactiveDeviceKeepsItsActivationPrompt() {
+        registerAdminPage();
+        MainActivity activity = startPanel();
+        assertTrue(activity.findViewById(android.R.id.content).findViewWithTag("action_55").isShown());
+        assertTrue(((TextView) activity.findViewById(R.id.warn_text)).getText().toString()
+                .contains("防卸载未开启：按 55 开启"));
+    }
+
+    @Test
+    public void anAlreadyActiveAdministratorIsNotMisreportedWhenTheActivationPageIsAbsent() {
+        shadowOf(DeviceProtection.dpm(context)).setActiveAdmin(DeviceProtection.admin(context));
+        MainActivity activity = startPanel();
+        assertFalse(activity.findViewById(android.R.id.content).findViewWithTag("action_55").isShown());
+        assertFalse(((TextView) activity.findViewById(R.id.warn_text)).getText().toString().contains("防卸载"));
+    }
+
+    private void assertUnsupportedPanel(MainActivity activity) {
+        View activate = activity.findViewById(android.R.id.content).findViewWithTag("action_55");
+        assertFalse("Unsupported firmware must not offer an unusable button", activate.isShown());
+        String warning = ((TextView) activity.findViewById(R.id.warn_text)).getText().toString();
+        assertTrue(warning.contains("当前系统不支持"));
+        assertFalse(warning.contains("防卸载未开启"));
+        assertFalse(warning.contains("按 55"));
     }
 
     @Test
@@ -183,6 +234,7 @@ public class UninstallProtectionTest {
         info.activityInfo.name = "com.android.settings.DeviceAdminAdd";
         info.activityInfo.exported = true;
         ShadowPackageManager packages = shadowOf(context.getPackageManager());
+        packages.setSystemFeature(PackageManager.FEATURE_DEVICE_ADMIN, true);
         packages.addResolveInfoForIntent(
                 new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN), info);
     }

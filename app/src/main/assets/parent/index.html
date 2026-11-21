@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>家长管理</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main id="shell" class="shell">
+    <header class="page-heading">
+      <svg class="tv-mark" viewBox="0 0 32 32" aria-hidden="true" fill="none">
+        <rect x="3.5" y="6" width="25" height="17.5" rx="3.5" stroke="currentColor" stroke-width="2"/>
+        <path d="M11 27.5h10M16 23.5v4M9.5 12h13M9.5 16.5h7.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <h1>家长管理</h1>
+      <span id="version" class="version"></span>
+      <button id="logout" class="text-button" type="button" data-code="00" hidden>退出</button>
+    </header>
+
+    <section id="login-view" class="login-view" aria-labelledby="login-title" hidden>
+      <h2 id="login-title">登录电视后台</h2>
+      <p id="login-help" class="row-state">使用电视和网页共用的 6 位家长密码。</p>
+      <p id="login-notice" class="notice" role="status" aria-live="polite" hidden></p>
+      <form id="login-form">
+        <div class="field">
+          <label for="login-password">家长密码</label>
+          <input id="login-password" name="password" type="password" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="current-password" aria-describedby="login-help" required>
+        </div>
+        <button id="login-submit" class="primary" type="submit">登录</button>
+      </form>
+    </section>
+
+    <section id="panel-view" class="panel" aria-label="电视控制面板" hidden>
+      <nav class="page-nav" aria-label="后台导航">
+        <button id="tab-control" type="button" data-page="control" aria-controls="page-control" aria-current="page">电视控制</button>
+        <button id="tab-viewing" type="button" data-page="viewing" aria-controls="page-viewing">观看设置</button>
+        <button id="tab-account" type="button" data-page="account" aria-controls="page-account">家长密码</button>
+        <button id="tab-system" type="button" data-page="system" aria-controls="page-system">系统管理</button>
+      </nav>
+
+      <div class="workspace">
+      <p id="notice" class="notice" role="status" aria-live="polite" hidden></p>
+      <p id="warning" class="warning" role="status" hidden></p>
+      <p id="sync-status" class="warning" role="status" hidden></p>
+
+      <section id="page-control" class="page" aria-labelledby="tab-control">
+        <div class="section-heading">
+          <h2>今日概览</h2>
+          <span id="protection-status" class="status">读取中</span>
+        </div>
+        <dl class="usage-grid">
+          <div class="remaining"><dt>今天剩余</dt><dd id="remaining-time">—</dd></div>
+          <div><dt>今天已看</dt><dd id="used-time">—</dd></div>
+          <div><dt>每天可看</dt><dd id="daily-limit">—</dd></div>
+        </dl>
+        <div class="quota-track" aria-hidden="true"><span id="quota-bar"></span></div>
+        <div class="quota-extras">
+          <span id="bonus-summary" hidden></span>
+          <span id="grace-summary" hidden>家长已解锁</span>
+        </div>
+        <dl class="service-state">
+          <div><dt>计时服务</dt><dd id="guard-status">—</dd></div>
+          <div><dt>设置保护</dt><dd id="settings-status">—</dd></div>
+        </dl>
+        <div class="control-actions">
+          <button type="button" class="primary lock-button" data-code="33"><span class="code">33</span>立即锁定</button>
+          <button type="button" class="secondary" data-code="77"><span class="code">77</span>清零今天已看</button>
+          <button type="button" class="primary" data-code="99" hidden>启用防护</button>
+        </div>
+      </section>
+
+      <section id="page-viewing" class="page" aria-labelledby="tab-viewing" hidden>
+        <h2 class="page-title">观看设置</h2>
+        <div class="settings-grid">
+          <form id="daily-form" class="setting-form" data-action="12">
+            <h3><span class="code">12</span>每日时长</h3>
+            <fieldset>
+              <div class="field">
+                <label for="daily-minutes">分钟数</label>
+                <input id="daily-minutes" name="minutes" type="number" inputmode="numeric" min="1" max="1440" step="1" required>
+              </div>
+              <p class="form-error" role="status" aria-live="polite" hidden></p>
+              <button class="primary" type="submit">保存</button>
+            </fieldset>
+          </form>
+          <form id="bonus-form" class="setting-form" data-action="22">
+            <h3><span class="code">22</span>临时加时长</h3>
+            <fieldset>
+              <div class="field">
+                <label for="bonus-minutes">增加分钟数</label>
+                <input id="bonus-minutes" name="minutes" type="number" inputmode="numeric" min="1" max="60" step="1" required>
+              </div>
+              <p class="form-error" role="status" aria-live="polite" hidden></p>
+              <button class="primary" type="submit">增加</button>
+            </fieldset>
+          </form>
+        </div>
+      </section>
+
+      <section id="page-account" class="page" aria-labelledby="tab-account" hidden>
+        <h2 class="page-title">家长密码</h2>
+        <p class="row-state">电视和网页共用此密码，修改后所有网页需重新登录。</p>
+        <div class="settings-grid">
+          <form id="pin-form" class="setting-form" data-action="11">
+            <h3><span class="code">11</span>修改家长密码</h3>
+            <fieldset>
+              <div class="field">
+                <label for="old-pin">当前 6 位密码</label>
+                <input id="old-pin" name="oldPin" type="password" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="current-password" required>
+              </div>
+              <div class="field">
+                <label for="new-pin">新的 6 位密码</label>
+                <input id="new-pin" name="newPin" type="password" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="new-password" required>
+              </div>
+              <div class="field">
+                <label for="confirm-pin">确认新密码</label>
+                <input id="confirm-pin" name="confirmPin" type="password" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="new-password" required>
+              </div>
+              <p class="form-error" role="status" aria-live="polite" hidden></p>
+              <button class="primary" type="submit">保存家长密码</button>
+            </fieldset>
+          </form>
+        </div>
+      </section>
+
+      <section id="page-system" class="page" aria-labelledby="tab-system" hidden>
+        <h2 class="page-title">系统管理</h2>
+        <div class="system-row">
+          <div class="system-label"><h3><span class="code">13</span>应用更新</h3><span id="system-version" class="row-state"></span></div>
+          <button type="button" class="secondary" data-code="13">检查更新</button>
+        </div>
+        <p id="update-message" class="update-message" role="status" hidden></p>
+        <div class="system-row">
+          <div class="system-label"><h3><span class="code">55</span>防卸载</h3><span id="admin-status" class="row-state">—</span></div>
+          <div class="confirm-actions" data-confirm-row="55">
+            <button class="text-button cancel-confirm" type="button" data-cancel="55" tabindex="-1" aria-hidden="true">取消</button>
+            <button id="enable-admin" type="button" class="secondary" data-code="55" data-label="开启防卸载" hidden>开启防卸载</button>
+          </div>
+        </div>
+        <div class="system-row">
+          <div class="system-label"><h3><span class="code">44</span>防护</h3><span id="system-protection" class="row-state">—</span></div>
+          <div class="confirm-actions" data-confirm-row="44">
+            <button class="text-button cancel-confirm" type="button" data-cancel="44" tabindex="-1" aria-hidden="true">取消</button>
+            <button type="button" class="secondary danger" data-code="44" data-label="关闭防护">关闭防护</button>
+          </div>
+          <button type="button" class="primary" data-code="99" hidden>启用防护</button>
+        </div>
+        <div class="system-row account-row">
+          <div class="system-label"><h3>家长密码</h3><span class="row-state">电视和网页共用</span></div>
+          <button type="button" class="secondary" data-page="account">修改密码</button>
+        </div>
+      </section>
+      </div>
+    </section>
+    <p id="initial-loading" class="loading" role="status">正在连接电视…</p>
+  </main>
+</body>
+</html>

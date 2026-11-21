@@ -222,6 +222,9 @@ public class ClearTodayUsageTest {
         service().setDailyLimitMinutes(WATCHED_MINUTES);
         assertTrue("额度用完必须已经锁屏", guard.isLocked());
         assertTrue(prefs.isGuardActive());
+        assertFalse("新额度锁使旧家长会话失效", AdminSession.isActive());
+        assertEquals(Prefs.AuthResult.SUCCESS, prefs.authenticate(PIN));
+        AdminSession.grant();
         markBaseline();
 
         guard.clearTodayUsage();

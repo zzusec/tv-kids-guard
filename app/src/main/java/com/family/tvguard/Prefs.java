@@ -3,17 +3,24 @@ package com.family.tvguard;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.SystemClock;
+import android.provider.Settings;
+import android.util.Log;
 
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
 import java.security.MessageDigest;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import java.util.UUID;
 
 /** Persistent state: admin password, daily limit and today's usage counters. */
 final class Prefs {
 
     private static final String FILE = "tvguard_prefs";
     private static final String KEY_PASSWORD = "password_hash";
+    private static final String KEY_PASSWORD_VERSION = "password_version";
     private static final String KEY_DAY = "day";
     private static final String KEY_USED = "used_seconds";
     private static final String KEY_BONUS = "bonus_seconds";
@@ -48,6 +55,10 @@ final class Prefs {
      * stepping out stops the refresh and the hold goes with it.
      */
     private static final String KEY_SETTINGS_SEEN_AT = "parent_settings_seen_at";
+    private static final String KEY_AUTH_BOOT = "parent_authorization_boot";
+    private static final String KEY_AUTH_RUNTIME = "parent_authorization_runtime";
+    private static final String CURRENT_RUNTIME = UUID.randomUUID().toString();
+    private static boolean missingBootIdentityReported;
 
     /** How long one correct parent PIN keeps the settings page free: two minutes. */
     static final long PIN_WINDOW_MILLIS = 2 * 60_000L;
@@ -79,12 +90,84 @@ final class Prefs {
     static final String DEFAULT_PASSWORD = "000000";
 
     private final SharedPreferences sp;
+    private final String bootIdentity;
 
     Prefs(Context ctx) {
+        this(ctx, currentBootIdentity(ctx));
+    }
+
+    /** An explicit proof also lets regression tests model separate boots without changing the OS. */
+    Prefs(Context ctx, String bootIdentity) {
         sp = ctx.getApplicationContext().getSharedPreferences(FILE, Context.MODE_PRIVATE);
+        this.bootIdentity = bootIdentity;
         if (sp.contains(LEGACY_UNLOCKED_TODAY)) {
             sp.edit().remove(LEGACY_UNLOCKED_TODAY).apply();
         }
+        synchronizeBootAuthorization();
+    }
+
+    private static String currentBootIdentity(Context context) {
+        // boot_count is maintained by Android 7+; older vendor builds may expose it too.
+        try {
+            int count = Settings.Global.getInt(context.getContentResolver(), "boot_count", -1);
+            if (count >= 0) return "count:" + count;
+        } catch (SecurityException error) {
+            Log.w("TvGuard", "Cannot read system boot count", error);
+        }
+        if (!KernelBootIdentity.VALUE.isEmpty()) return "kernel:" + KernelBootIdentity.VALUE;
+        if (!missingBootIdentityReported) {
+            missingBootIdentityReported = true;
+            Log.w("TvGuard", "No boot identity; stored parent authorization requires this runtime");
+        }
+        return "";
+    }
+
+    private static final class KernelBootIdentity {
+        static final String VALUE = read();
+        private static String read() {
+            try (BufferedReader reader = new BufferedReader(
+                    new FileReader("/proc/sys/kernel/random/boot_id"))) {
+                String value = reader.readLine();
+                return value != null && value.matches("[0-9a-fA-F-]{36}") ? value : "";
+            } catch (IOException | SecurityException unavailable) {
+                return "";
+            }
+        }
+    }
+
+    private void synchronizeBootAuthorization() {
+        if (!bootIdentity.isEmpty() && !bootIdentity.equals(sp.getString(KEY_AUTH_BOOT, ""))) {
+            clearPreviousBootAuthorization();
+        } else if (bootIdentity.isEmpty()
+                && !CURRENT_RUNTIME.equals(sp.getString(KEY_AUTH_RUNTIME, ""))
+                && (sp.contains(KEY_GRACE_SINCE) || sp.contains(KEY_PIN_VERIFIED_AT)
+                    || sp.contains(KEY_SETTINGS_SEEN_AT))) {
+            // Without an OS boot identifier, a process restart cannot prove this is still
+            // the same boot. Refuse inherited authorization before any settings/lock read.
+            Log.w("TvGuard", "Cannot restore parent authorization without a verified boot identity");
+            clearPreviousBootAuthorization();
+        }
+    }
+
+    void onBootCompleted() {
+        if (!bootIdentity.isEmpty()) {
+            synchronizeBootAuthorization();
+        } else if (!CURRENT_RUNTIME.equals(sp.getString(KEY_AUTH_RUNTIME, ""))) {
+            // Older systems without either boot identifier still deliver BOOT_COMPLETED.
+            // A PIN entered in this new runtime before a late broadcast must remain valid.
+            clearPreviousBootAuthorization();
+        }
+    }
+
+    private void clearPreviousBootAuthorization() {
+        SharedPreferences.Editor edit = sp.edit()
+                .remove(KEY_GRACE_SINCE).remove(KEY_GRACE_FROM_LOCK)
+                .remove(KEY_PIN_VERIFIED_AT).remove(KEY_SETTINGS_SEEN_AT)
+                .remove(KEY_AUTH_RUNTIME);
+        if (bootIdentity.isEmpty()) edit.remove(KEY_AUTH_BOOT);
+        else edit.putString(KEY_AUTH_BOOT, bootIdentity);
+        if (!edit.commit()) throw new IllegalStateException("Could not clear previous boot authorization");
+        AdminSession.revoke();
     }
 
     private static String today() {
@@ -124,6 +207,7 @@ final class Prefs {
         // synced reports 1970, and treating that backwards jump as a new day would hand the
         // child a free reset on every power cycle, so a backwards clock keeps the day's usage.
         if (day.compareTo(stored) > 0) {
+            AdminSession.revoke();
             sp.edit()
                     .putString(KEY_DAY, day)
                     .putLong(KEY_USED, 0L)
@@ -140,6 +224,12 @@ final class Prefs {
         return false;
     }
 
+    /** The accounting day, even when another reader already performed the rollover. */
+    String getUsageDay() {
+        rollOverIfNeeded();
+        return sp.getString(KEY_DAY, "");
+    }
+
     boolean hasPassword() {
         return !sp.getString(KEY_PASSWORD, "").isEmpty();
     }
@@ -148,9 +238,15 @@ final class Prefs {
         if (!isValidPassword(raw) || DEFAULT_PASSWORD.equals(raw)) {
             throw new IllegalArgumentException("Use a new six-digit parent PIN");
         }
-        if (!sp.edit().putString(KEY_PASSWORD, hash(raw)).commit()) {
+        if (!sp.edit().putString(KEY_PASSWORD, hash(raw))
+                .putString(KEY_PASSWORD_VERSION, UUID.randomUUID().toString()).commit()) {
             throw new IllegalStateException("Could not save parent PIN");
         }
+    }
+
+    /** Bind browser sessions to this password, including upgrades from pre-versioned storage. */
+    String passwordVersion() {
+        return sp.getString(KEY_PASSWORD_VERSION, "") + ":" + sp.getString(KEY_PASSWORD, "");
     }
 
     boolean needsPasswordSetup() {
@@ -158,6 +254,16 @@ final class Prefs {
     }
 
     AuthResult authenticate(String raw) {
+        return authenticate(raw, true);
+    }
+
+    /** A web login proves remote ownership without opening settings on the television. */
+    AuthResult authenticateRemote(String raw) {
+        return authenticate(raw, false);
+    }
+
+    private AuthResult authenticate(String raw, boolean local) {
+        rollOverIfNeeded();
         if (lockoutRemainingSeconds() > 0L) {
             return AuthResult.COOLDOWN;
         }
@@ -171,7 +277,9 @@ final class Prefs {
         clearFailures();
         // The parent is standing in front of the television and proved it, so the settings pages get
         // the two-minute window on top of whatever screen this unlocked.
-        noteParentPinVerified();
+        if (local && !needsPasswordSetup()) {
+            noteParentPinVerified();
+        }
         return AuthResult.SUCCESS;
     }
 
@@ -180,7 +288,14 @@ final class Prefs {
     }
 
     void setProtectionEnabled(boolean enabled) {
-        if (!sp.edit().putBoolean(KEY_PROTECTION_ENABLED, enabled).commit()) {
+        SharedPreferences.Editor edit = sp.edit().putBoolean(KEY_PROTECTION_ENABLED, enabled);
+        if (enabled != isProtectionEnabled()) {
+            // The stopped service cannot observe standby. Never restore its old viewing or
+            // settings authorization when protection is enabled again later in the same boot.
+            edit.remove(KEY_GRACE_SINCE).remove(KEY_GRACE_FROM_LOCK)
+                    .remove(KEY_PIN_VERIFIED_AT).remove(KEY_SETTINGS_SEEN_AT);
+        }
+        if (!edit.commit()) {
             throw new IllegalStateException("Could not save protection state");
         }
     }
@@ -325,6 +440,7 @@ final class Prefs {
         sp.edit()
                 .putLong(KEY_GRACE_SINCE, SystemClock.elapsedRealtime())
                 .putBoolean(KEY_GRACE_FROM_LOCK, fromLock)
+                .putString(KEY_AUTH_RUNTIME, CURRENT_RUNTIME)
                 .commit();
     }
 
@@ -334,14 +450,15 @@ final class Prefs {
 
     /** Whether a parent is still inside the grace they bought with the PIN, ended by any standby. */
     boolean isParentGraceActive() {
+        // A grace check can short-circuit the later quota reads. It must observe the new day
+        // itself rather than relying on isLocked()/remainingSeconds() to eventually clear it.
+        rollOverIfNeeded();
         long since = sp.getLong(KEY_GRACE_SINCE, 0L);
         if (since <= 0L) {
             return false;
         }
         if (SystemClock.elapsedRealtime() < since) {
-            // The boot clock went backwards, so the television was powered off rather than left
-            // running. A power cycle counts as the standby that ends the grace, otherwise pulling
-            // the plug would be the way to keep a parent's exemption alive forever.
+            // Boot identity is checked at construction. Also reject a future or corrupt timestamp.
             endParentGrace();
             return false;
         }
@@ -360,14 +477,19 @@ final class Prefs {
      * does not open this window on its own (the {@code 11 改密码} flow authenticates first).
      */
     private void noteParentPinVerified() {
-        sp.edit().putLong(KEY_PIN_VERIFIED_AT, SystemClock.elapsedRealtime()).commit();
+        sp.edit().putLong(KEY_PIN_VERIFIED_AT, SystemClock.elapsedRealtime())
+                .putString(KEY_AUTH_RUNTIME, CURRENT_RUNTIME).commit();
+    }
+
+    void clearParentPinWindow() {
+        sp.edit().remove(KEY_PIN_VERIFIED_AT).apply();
     }
 
     /**
      * Whether the settings pages are still inside the two minutes that one correct parent PIN buys.
-     * The clock is {@code elapsedRealtime}, so a power cycle restarts it below the stored moment and
-     * the window is gone with the previous boot — no flag to clear and no way to inherit a parent's
-     * pass across a restart.
+     * Boot identity prevents inheriting a previous boot's PIN window, even when the new boot has
+     * already run longer than the previous PIN timestamp. Within a boot, elapsedRealtime limits
+     * the window independently of wall-clock corrections.
      *
      * <p>Since 2.5.19 this is only the entry ticket: a parent who is still standing inside the
      * settings menu is covered by {@link #isSettingsHoldActive()} for as long as they stay there.
@@ -396,7 +518,8 @@ final class Prefs {
         if (at > 0L && now >= at && now - at < SETTINGS_HOLD_REFRESH_MILLIS) {
             return;
         }
-        sp.edit().putLong(KEY_SETTINGS_SEEN_AT, now).commit();
+        sp.edit().putLong(KEY_SETTINGS_SEEN_AT, now)
+                .putString(KEY_AUTH_RUNTIME, CURRENT_RUNTIME).commit();
     }
 
     /** The settings hold is over: the family looked at something other than the settings menu. */
@@ -408,8 +531,8 @@ final class Prefs {
 
     /**
      * Whether the family is still sitting in the settings menu under a PIN they already paid. The
-     * stamp doubles as the power-cycle test: a boot clock below the last sighting means the
-     * television was switched off, and a hold cannot be carried across a boot.
+     * stamp expires unrefreshed visits; the boot binding separately prevents carrying it across
+     * a power cycle. A timestamp ahead of the current boot clock is rejected as well.
      */
     boolean isSettingsHoldActive() {
         long at = sp.getLong(KEY_SETTINGS_SEEN_AT, 0L);

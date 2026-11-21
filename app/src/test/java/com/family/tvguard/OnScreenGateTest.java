@@ -207,7 +207,7 @@ final class ScreenRemote {
         assertNotNull("Remote entry requires an initial focus", decor.findFocus());
         if (!decor.findViewWithTag("key_1").isShown()) openPad(activity);
         View focused = decor.findFocus();
-        if ("parent_manage".equals(focused.getTag())) {
+        if (focused.getId() == R.id.lock_input) {
             press(activity, KeyEvent.KEYCODE_DPAD_DOWN);
             focused = decor.findFocus();
         }

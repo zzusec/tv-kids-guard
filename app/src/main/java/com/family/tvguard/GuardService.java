@@ -55,6 +55,8 @@ public class GuardService extends Service {
     private boolean shieldAttached;
 
     private long usedMillis;
+    private String usageDay;
+    private boolean usageDayChanged;
     private long lastTickElapsed;
     /**
      * Counting baseline, deliberately on {@code uptimeMillis} rather than {@code elapsedRealtime}:
@@ -65,7 +67,7 @@ public class GuardService extends Service {
     private long lastPersistElapsed;
     private long lastLockFocusElapsed;
     private volatile boolean locked;
-    private boolean lockActivityVisible;
+    private long lockUiVisibleUntil;
     private boolean consoleVisible;
     /**
      * The parent screens hold a short lease rather than a plain flag: the shield must stay off
@@ -73,6 +75,8 @@ public class GuardService extends Service {
      * that screen dies without clearing the flag.
      */
     private long parentUiLeaseElapsed;
+    private long parentUiLaunchUntil;
+    static final long LOCK_UI_LEASE_MILLIS = 3000L;
     private boolean maintenanceApplied;
     private final StringBuilder inputBuffer = new StringBuilder();
 
@@ -97,13 +101,10 @@ public class GuardService extends Service {
                 // Standby is not part of the parent grace: whoever wakes the television should find
                 // the lock again rather than the screen the parent left it on. This is the one
                 // boundary of the grace, so the family ending a viewing session is a power key away.
-                prefs.endParentGrace();
-                // 2.5.19: the settings hold lives on the same boundary, because a television that
-                // stood by and woke up is not the parent still standing in the settings menu.
-                prefs.clearSettingsHold();
+                invalidateParentAuthorization();
             } else if (Intent.ACTION_SCREEN_ON.equals(action) && locked) {
                 // However the child blanked the screen, the lock must be the first thing back.
-                lockActivityVisible = false;
+                lockUiVisibleUntil = 0L;
                 LockActivity.launch(GuardService.this);
             }
             tick();
@@ -148,6 +149,7 @@ public class GuardService extends Service {
         wm = (WindowManager) getSystemService(WINDOW_SERVICE);
         powerManager = (PowerManager) getSystemService(POWER_SERVICE);
         usedMillis = prefs.getUsedSeconds() * 1000L;
+        usageDay = prefs.getUsageDay();
         lastTickElapsed = SystemClock.elapsedRealtime();
         lastTickUptime = SystemClock.uptimeMillis();
         lastPersistElapsed = lastTickElapsed;
@@ -194,7 +196,8 @@ public class GuardService extends Service {
         }
         // Restart promptly if Android kills the process; the lock must not depend on the
         // service staying alive by luck.
-        if (prefs != null && lockRequired() && !locked) {
+        synchronizeDailyLock();
+        if (lockRequired() && !locked) {
             enterLock();
         }
         // START_STICKY plus a foreground notification keeps the counter and the lock watchdog
@@ -254,12 +257,7 @@ public class GuardService extends Service {
         }
         // A screen left on past midnight must not stay locked: the new day starts with a fresh
         // allowance, so release the lock and let the countdown reappear.
-        if (prefs.rollOverIfNeeded()) {
-            usedMillis = 0L;
-            if (locked) {
-                exitLock();
-            }
-        }
+        synchronizeDailyLock();
 
         long now = SystemClock.elapsedRealtime();
         lastTickElapsed = now;
@@ -278,7 +276,7 @@ public class GuardService extends Service {
         if (locked) {
             // Only opaque guard UI, an authenticated console, or explicit parent maintenance
             // may replace the lock. Merely opening the launcher activity is not authorization.
-            if (lockActivityVisible || isParentUiVisible() || maintenance) {
+            if (isLockUiVisible() || isParentUiVisible() || maintenance) {
                 removeShield();
             } else {
                 showShield();
@@ -299,7 +297,29 @@ public class GuardService extends Service {
     }
 
     private void persist() {
+        // Screen-off, service destruction or another Prefs reader can beat the next tick to
+        // midnight. Never write yesterday's in-memory counter back into today's fresh quota.
+        synchronizeUsageDay();
         prefs.setUsedSeconds(usedMillis / 1000L);
+    }
+
+    private void synchronizeUsageDay() {
+        String currentDay = prefs.getUsageDay();
+        if (!currentDay.equals(usageDay)) {
+            usageDay = currentDay;
+            usedMillis = prefs.getUsedSeconds() * 1000L;
+            lastTickUptime = SystemClock.uptimeMillis();
+            usageDayChanged = true;
+        }
+    }
+
+    private void synchronizeDailyLock() {
+        synchronizeUsageDay();
+        if (usageDayChanged) {
+            usageDayChanged = false;
+            // Keep a deliberate lock made today; only a cleared yesterday lock may come down.
+            if (locked && !prefs.isLocked()) exitLock("new_day");
+        }
     }
 
     /**
@@ -336,12 +356,17 @@ public class GuardService extends Service {
     // ----------------------------------------------------------------- lock UI
 
     private void enterLock() {
+        synchronizeUsageDay();
+        // Automatic quota exhaustion is just as much a new authentication boundary as 33.
+        // A previously opened gate must not finish a pre-lock password or reuse a panel session.
+        if (!locked && !prefs.isLocked()) invalidateParentAuthorization();
         locked = true;
         prefs.setLocked(true);
-        lockActivityVisible = false;
+        lockUiVisibleUntil = 0L;
         lastLockFocusElapsed = 0L;
         inputBuffer.setLength(0);
         persist();
+        Log.i(TAG, "lock_enter remaining_seconds=" + remainingMillis() / 1000L);
         removeCountdown();
         if (!isParentUiVisible() && !AdminSession.isMaintenanceActive()) {
             showShield();
@@ -355,7 +380,8 @@ public class GuardService extends Service {
      * screen back to the front.
      */
     private void keepLockInFront(long now) {
-        if (lockActivityVisible || isParentUiVisible() || AdminSession.isMaintenanceActive()) {
+        if (isLockUiVisible() || isParentUiVisible() || isParentUiLaunchPending()
+                || AdminSession.isMaintenanceActive()) {
             return;
         }
 
@@ -389,21 +415,23 @@ public class GuardService extends Service {
         // The lock being up is what makes the grace defer it. On a day that still has allowance the
         // grace only stops the settings gate asking again, so a morning errand cannot postpone an
         // evening lock that has not happened yet.
-        boolean fromLock = locked || prefs.isLocked();
+        boolean fromLock = locked || prefs.isLocked() || isQuotaExhausted()
+                || prefs.isParentGraceDeferringLock();
         prefs.startParentGrace(fromLock);
         if (fromLock) {
             // Clears the lock flag and the shield, and brings the corner back showing what is left.
-            exitLock();
+            exitLock("parent_pin_verified");
         } else {
             removeShield();
         }
         return true;
     }
 
-    private void exitLock() {
+    private void exitLock(String reason) {
+        Log.i(TAG, "lock_exit reason=" + reason);
         locked = false;
         prefs.setLocked(false);
-        lockActivityVisible = false;
+        lockUiVisibleUntil = 0L;
         inputBuffer.setLength(0);
         lastTickElapsed = SystemClock.elapsedRealtime();
         lastTickUptime = SystemClock.uptimeMillis();
@@ -416,12 +444,22 @@ public class GuardService extends Service {
         if (!locked) {
             return;
         }
-        lockActivityVisible = visible;
-        if (visible || isParentUiVisible() || AdminSession.isMaintenanceActive()) {
+        boolean wasVisible = isLockUiVisible();
+        lockUiVisibleUntil = visible ? SystemClock.elapsedRealtime() + LOCK_UI_LEASE_MILLIS : 0L;
+        if (wasVisible != visible) Log.i(TAG, "lock_window covered=" + visible);
+        if (isLockUiVisible() || isParentUiVisible() || AdminSession.isMaintenanceActive()) {
             removeShield();
         } else {
             showShield();
         }
+    }
+
+    private boolean isLockUiVisible() {
+        if (lockUiVisibleUntil > 0L && lockUiVisibleUntil <= SystemClock.elapsedRealtime()) {
+            lockUiVisibleUntil = 0L;
+            Log.w(TAG, "lock_window coverage_expired; restoring shield");
+        }
+        return lockUiVisibleUntil > SystemClock.elapsedRealtime();
     }
 
     /** Seconds left before the next password attempt is accepted, 0 when entry is open. */
@@ -474,12 +512,31 @@ public class GuardService extends Service {
             LockActivity.openParentGate(this);
             return false;
         }
-        // Since 2.5.12 the password is proof that a parent is present, not a day of unlimited
-        // viewing: it hands over to the panel, and only the panel's bonus or daily limit can give
-        // the child more time. The lock stays up and returns when the panel closes.
         AdminSession.grant();
+        releaseAfterParentPin(this);
         LockActivity.openParentConsole(this);
         return true;
+    }
+
+    /** Called only after a fresh, configured television PIN succeeds; never from web login. */
+    static void releaseAfterParentPin(Context context) {
+        Prefs verified = new Prefs(context);
+        if (!AdminSession.isActive() || verified.needsPasswordSetup()
+                || !verified.isParentPinWindowActive()) {
+            throw new IllegalStateException("Fresh parent PIN required");
+        }
+        Log.i(TAG, "native_parent_pin_verified runtime_pid=" + android.os.Process.myPid());
+        GuardService service = instance;
+        if (service != null) {
+            service.synchronizeDailyLock();
+            if (service.locked || verified.isLocked() || service.isQuotaExhausted()) {
+                service.grantParentGrace();
+            }
+        } else if (verified.isGuardActive()) {
+            verified.startParentGrace(true);
+            verified.setLocked(false);
+            LockActivity.dismiss();
+        }
     }
 
     /**
@@ -490,14 +547,30 @@ public class GuardService extends Service {
         if (!AdminSession.isActive()) {
             return;
         }
-        // 33 立即锁定 is the parent ending this viewing session, so it also spends the grace the
-        // same PIN bought: the lock has to come back now, not at the next standby. The 2.5.19
-        // settings hold is spent with it — locking the set is not a parent errand in the menu.
+        applyLockNow();
+    }
+
+    private void applyLockNow() {
+        invalidateParentAuthorization();
+        enterLock();
+    }
+
+    /** Old authorization and partial input must never cross a new lock/password boundary. */
+    void invalidateParentAuthorization() {
         prefs.endParentGrace();
         prefs.clearSettingsHold();
-        if (!locked) {
-            enterLock();
-        }
+        prefs.clearParentPinWindow();
+        AdminSession.revoke();
+        clearLockInput();
+        consoleVisible = false;
+        parentUiLeaseElapsed = 0L;
+        parentUiLaunchUntil = 0L;
+        AdminAuthActivity.invalidateForLock();
+        refreshParentVisibility();
+    }
+
+    void clearLockInput() {
+        inputBuffer.setLength(0);
     }
 
     private boolean isParentUiVisible() {
@@ -518,9 +591,27 @@ public class GuardService extends Service {
         return parentUiLeaseElapsed > SystemClock.elapsedRealtime();
     }
 
+    void beginParentUiLaunch() {
+        if (locked) parentUiLaunchUntil = SystemClock.elapsedRealtime() + 5000L;
+    }
+
+    void cancelParentUiLaunch() {
+        parentUiLaunchUntil = 0L;
+        refreshParentVisibility();
+    }
+
+    private boolean isParentUiLaunchPending() {
+        return parentUiLaunchUntil > SystemClock.elapsedRealtime();
+    }
+
+    static boolean isParentUiStarting() {
+        return instance != null && instance.isParentUiLaunchPending();
+    }
+
     /** Lease for the opaque, non-exported parent screens; refreshed once a second while shown. */
     void setParentUiVisible(boolean visible) {
         if (visible) {
+            parentUiLaunchUntil = 0L;
             parentUiLeaseElapsed = SystemClock.elapsedRealtime() + 5000L;
             consoleVisible = false;
         } else {
@@ -541,7 +632,7 @@ public class GuardService extends Service {
         if (!locked) {
             return;
         }
-        if (isParentUiVisible() || lockActivityVisible || AdminSession.isMaintenanceActive()) {
+        if (isParentUiVisible() || isLockUiVisible() || AdminSession.isMaintenanceActive()) {
             removeShield();
         } else {
             showShield();
@@ -565,25 +656,39 @@ public class GuardService extends Service {
         if (!AdminSession.isActive()) {
             throw new IllegalStateException("Parent authorization required");
         }
+        applyDailyLimitMinutes(minutes);
+    }
+
+    private void applyDailyLimitMinutes(int minutes) {
+        synchronizeUsageDay();
         prefs.setDailyLimitMinutes(minutes);
+        prefs.endParentGrace();
         // A new limit resumes the daily quota without resetting watched time or today's bonus.
         if (locked && remainingMillis() > 0L) {
-            exitLock();
+            exitLock("daily_limit_changed");
         }
         tick();
     }
 
     /** Grants extra minutes on top of the daily limit and releases the current lock. */
     void grantBonusMinutes(int minutes) {
-        if (!AdminSession.isActive() || minutes == 0
-                || minutes > Prefs.MAX_BONUS_MINUTES - prefs.getBonusSeconds() / 60L) {
+        if (!AdminSession.isActive()) {
             throw new IllegalArgumentException("Parent authorization and valid bonus required");
+        }
+        applyBonusMinutes(minutes);
+    }
+
+    private void applyBonusMinutes(int minutes) {
+        if (minutes < 1 || minutes > Prefs.MAX_BONUS_MINUTES - prefs.getBonusSeconds() / 60L) {
+            throw new IllegalArgumentException("临时加时需在今天剩余的 1–60 分钟额度内");
         }
         long seconds = Math.max(0L, prefs.getBonusSeconds() + minutes * 60L);
         prefs.setBonusSeconds(seconds);
-        if (locked) {
-            exitLock();
+        prefs.endParentGrace();
+        if (locked && remainingMillis() > 0L) {
+            exitLock("bonus_granted");
         }
+        tick();
     }
 
     /**
@@ -600,6 +705,25 @@ public class GuardService extends Service {
         if (!AdminSession.isActive()) {
             throw new IllegalStateException("Parent authorization required");
         }
+        applyClearTodayUsage();
+    }
+
+    /** Browser commands share the television mutations, with their own live authorization. */
+    void applyWebCommand(ParentWebController.Authorization auth, String code, int minutes) {
+        auth.require();
+        synchronizeUsageDay();
+        switch (code) {
+            case "12": applyDailyLimitMinutes(minutes); break;
+            case "22": applyBonusMinutes(minutes); break;
+            case "33": applyLockNow(); break;
+            case "77": applyClearTodayUsage(); break;
+            default: throw new IllegalArgumentException("Unknown parent command");
+        }
+    }
+
+    private void applyClearTodayUsage() {
+        synchronizeUsageDay();
+        prefs.endParentGrace();
         usedMillis = 0L;
         prefs.setUsedSeconds(0L);
         // Re-arm the counting baseline: without this the gap since the previous tick would be
@@ -608,7 +732,7 @@ public class GuardService extends Service {
         lastTickElapsed = SystemClock.elapsedRealtime();
         if (locked || prefs.isLocked()) {
             // Clears the lock flag and the shield and brings the corner back showing the full day.
-            exitLock();
+            exitLock("usage_cleared");
         } else {
             updateCountdown(remainingMillis());
         }
@@ -729,7 +853,8 @@ public class GuardService extends Service {
         try {
             wm.addView(lockShield, lp);
             shieldAttached = true;
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            reportFailure("锁屏遮罩无法显示，请检查悬浮窗权限", e);
         }
     }
 

@@ -39,6 +39,9 @@ jobs:
       - name: Test Python tools (no production key required)
         run: python3 -I -B -m unittest discover -s tools -p 'test_*.py' -v
 
+      - name: Test parent web console
+        run: node --test tools/test_parent_web.cjs
+
       - name: Test and build community debug APK
         run: ./gradlew --no-daemon testDebugUnitTest assembleDebug
 

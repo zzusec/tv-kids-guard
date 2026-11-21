@@ -16,10 +16,12 @@ public class BootReceiver extends BroadcastReceiver {
                 && !Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
             return;
         }
+        Prefs prefs = new Prefs(context);
+        if (Intent.ACTION_BOOT_COMPLETED.equals(action)) prefs.onBootCompleted();
         UpdateInstaller.recover(context);
         UpdateManager.reconcileInstalled(context);
         UpdateManager.schedule(context);
-        Prefs prefs = new Prefs(context);
+        ParentWebService.start(context);
         if (!prefs.isProtectionEnabled()) {
             return;
         }

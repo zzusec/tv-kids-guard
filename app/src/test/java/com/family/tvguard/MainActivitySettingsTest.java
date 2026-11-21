@@ -51,6 +51,17 @@ public class MainActivitySettingsTest {
         context.getSharedPreferences("tvguard_prefs", Context.MODE_PRIVATE).edit().clear().commit();
         prefs = new Prefs(context);
         prefs.setPassword("135790");
+        // These tests model a supported device; unsupported firmware is covered separately.
+        shadowOf(context.getPackageManager()).setSystemFeature(
+                android.content.pm.PackageManager.FEATURE_DEVICE_ADMIN, true);
+        android.content.pm.ResolveInfo adminPage = new android.content.pm.ResolveInfo();
+        adminPage.activityInfo = new android.content.pm.ActivityInfo();
+        adminPage.activityInfo.packageName = "com.android.settings";
+        adminPage.activityInfo.name = "com.android.settings.DeviceAdminAdd";
+        adminPage.activityInfo.exported = true;
+        shadowOf(context.getPackageManager()).addResolveInfoForIntent(
+                new android.content.Intent(android.app.admin.DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN),
+                adminPage);
         AdminSession.revoke();
         AdminSession.grant();
     }

@@ -170,7 +170,7 @@ final class PinDialog extends Dialog {
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         int code = event.getKeyCode();
-        if (isVolumeKey(code) || code == KeyEvent.KEYCODE_POWER) {
+        if (isVolumeKey(code) || code == KeyEvent.KEYCODE_POWER || code == KeyEvent.KEYCODE_TV_POWER) {
             return super.dispatchKeyEvent(event);
         }
         if (inputMode.handleKeyEvent(event) || keypad.handleKeyEvent(event)) return true;

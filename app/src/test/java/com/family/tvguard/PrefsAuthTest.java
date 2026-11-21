@@ -71,6 +71,28 @@ public class PrefsAuthTest {
     }
 
     @Test
+    public void remoteLoginDoesNotOpenTheTelevisionsSettingsWindow() {
+        prefs.setPassword("246810");
+
+        assertEquals(Prefs.AuthResult.SUCCESS, prefs.authenticateRemote("246810"));
+
+        assertFalse(prefs.isParentPinWindowActive());
+        assertFalse(prefs.isSettingsGateFree());
+    }
+
+    @Test
+    public void localAndRemoteLoginShareTheSameFailureCooldown() {
+        prefs.setPassword("246810");
+        assertEquals(Prefs.AuthResult.INCORRECT, prefs.authenticateRemote("000001"));
+        assertEquals(Prefs.AuthResult.INCORRECT, prefs.authenticate("000002"));
+        assertEquals(Prefs.AuthResult.INCORRECT, prefs.authenticateRemote("000003"));
+
+        assertEquals(Prefs.AuthResult.COOLDOWN, prefs.authenticateRemote("246810"));
+        assertEquals(Prefs.AuthResult.COOLDOWN, prefs.authenticate("246810"));
+        assertFalse(prefs.isParentPinWindowActive());
+    }
+
+    @Test
     public void guardStaysActiveUntilTheParentBuysMoreTime() {
         assertFalse(prefs.isGuardActive());
 

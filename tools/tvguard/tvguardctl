@@ -47,9 +47,10 @@ fi
 [ -n "$SERIAL" ] || { printf 'error: 未指定电视。用 TVGUARD_SERIAL 或第一个参数给出 IP/序列号。\n' >&2; exit 1; }
 [[ "$SERIAL" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && SERIAL="${SERIAL}:5555"
 
-command -v adb >/dev/null 2>&1 || { printf 'error: 找不到 adb\n' >&2; exit 1; }
+ADB="${TVGUARD_ADB:-$(command -v adb || true)}"
+[ -n "$ADB" ] && [ -x "$ADB" ] || { printf 'error: 找不到 adb\n' >&2; exit 1; }
 
-tv() { adb -s "$SERIAL" "$@"; }
+tv() { "$ADB" -s "$SERIAL" "$@"; }
 
 # The 2015 BRAVIA adbd goes offline under bursts. Reconnect at most twice, without hammering.
 ensure_online() {
@@ -57,7 +58,7 @@ ensure_online() {
   for attempt in 1 2 3; do
     state=$(tv get-state 2>/dev/null || true)
     [ "$state" = "device" ] && return 0
-    adb connect "$SERIAL" >/dev/null 2>&1 || true
+    "$ADB" connect "$SERIAL" >/dev/null 2>&1 || true
     state=$(tv get-state 2>/dev/null || true)
     [ "$state" = "device" ] && return 0
     [ "$attempt" -lt 3 ] && sleep 3
@@ -123,7 +124,10 @@ send_command() {
     bonus\ [0-9]*) ;;
     *) printf 'error: 拒绝发送无法识别的命令：%s\n' "$line" >&2; return 1 ;;
   esac
-  tv shell "printf '%s\n' '$line' >> $DIR/cmd" >/dev/null 2>&1
+  tv shell "printf '%s\n' '$line' >> $DIR/cmd" >/dev/null || {
+    printf 'error: 命令写入失败，未确认送达电视。\n' >&2
+    return 1
+  }
   printf '已发送：%s\n' "$line"
 }
 
@@ -135,11 +139,16 @@ set_config() {
   [[ "$key" =~ ^(LIMIT_MINUTES|POLL_SECONDS|APPS)$ ]] || { printf 'error: 不支持的配置项\n' >&2; return 1; }
   [[ "$value" =~ ^[A-Za-z0-9_.\ -]+$ ]] || { printf 'error: 配置值含不允许的字符\n' >&2; return 1; }
   tv shell "
-    sed 's|^$key=.*|$key=$value|' $DIR/config > $DIR/config.tmp 2>/dev/null
-    grep -q '^$key=' $DIR/config.tmp 2>/dev/null || printf '$key=$value\n' >> $DIR/config.tmp
-    mv $DIR/config.tmp $DIR/config
+    sed 's|^$key=.*|$key=$value|' $DIR/config > $DIR/config.tmp || exit 1
+    if ! grep -q '^$key=' $DIR/config.tmp; then
+      printf '%s\n' '$key=$value' >> $DIR/config.tmp || exit 1
+    fi
+    mv $DIR/config.tmp $DIR/config || exit 1
     grep '^$key=' $DIR/config
-  " 2>/dev/null
+  " || {
+    printf 'error: 配置写入失败，未确认电视配置已更新。\n' >&2
+    return 1
+  }
   printf '守护进程会在 10 秒内读到新配置。\n'
 }
 
@@ -156,8 +165,16 @@ cmd_watchdog() {
   " 2>/dev/null
 }
 
+xml_text() {
+  local value="$1"
+  value=${value//&/\&amp;}
+  value=${value//</\&lt;}
+  value=${value//>/\&gt;}
+  printf '%s' "$value"
+}
+
 cmd_install_watchdog() {
-  mkdir -p "$(dirname "$PLIST")"
+  mkdir -p "$(dirname "$PLIST")" || return 1
   cat > "$PLIST" <<PLISTEOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -166,19 +183,24 @@ cmd_install_watchdog() {
   <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key>
   <array>
-    <string>$SCRIPT_DIR/tvguardctl</string>
+    <string>$(xml_text "$SCRIPT_DIR/tvguardctl")</string>
     <string>watchdog</string>
   </array>
   <key>EnvironmentVariables</key>
-  <dict><key>TVGUARD_SERIAL</key><string>$SERIAL</string></dict>
+  <dict>
+    <key>TVGUARD_SERIAL</key><string>$(xml_text "$SERIAL")</string>
+    <key>TVGUARD_ADB</key><string>$(xml_text "$ADB")</string>
+  </dict>
   <key>StartInterval</key><integer>300</integer>
   <key>RunAtLoad</key><true/>
   <key>StandardErrorPath</key><string>/tmp/tvguard-watchdog.err</string>
 </dict>
 </plist>
 PLISTEOF
+  [ "$?" -eq 0 ] || { printf 'error: 无法写入看护任务配置。\n' >&2; return 1; }
   launchctl unload "$PLIST" >/dev/null 2>&1 || true
-  launchctl load "$PLIST" && printf '已安装看护任务：每 5 分钟检查一次（%s）\n' "$PLIST"
+  launchctl load "$PLIST" || { printf 'error: 看护任务加载失败。\n' >&2; return 1; }
+  printf '已安装看护任务：每 5 分钟检查一次（%s）\n' "$PLIST"
   printf '注意：这台机器睡眠时不会检查。电视重启后要等它醒来才会恢复守护进程。\n'
 }
 

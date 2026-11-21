@@ -64,6 +64,9 @@ public class PlatformStartupTest {
 
         Intent service = shadowOf(context).getNextStartedService();
         assertNotNull(service);
+        assertEquals(ParentWebService.class.getName(), service.getComponent().getClassName());
+        service = shadowOf(context).getNextStartedService();
+        assertNotNull(service);
         assertEquals(GuardService.class.getName(), service.getComponent().getClassName());
         assertEquals(420L, prefs.getUsedSeconds());
         assertTrue(prefs.isLocked());
@@ -79,7 +82,10 @@ public class PlatformStartupTest {
         new BootReceiver().onReceive(context, new Intent(Intent.ACTION_MY_PACKAGE_REPLACED));
         new WatchdogReceiver().onReceive(context, new Intent());
 
-        assertNull(shadowOf(context).getNextStartedService());
+        Intent service = shadowOf(context).getNextStartedService();
+        assertNotNull("关闭防护后网页后台仍需启动，以便远程恢复", service);
+        assertEquals(ParentWebService.class.getName(), service.getComponent().getClassName());
+        assertNull("不能因此启用计时服务", shadowOf(context).getNextStartedService());
         assertFalse(prefs.isProtectionEnabled());
     }
 

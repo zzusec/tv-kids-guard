@@ -158,7 +158,6 @@ LAST_KICK_LOG=0
 LOOPS=0
 
 while true; do
-    apply_command
     # Re-read the config about every 10 seconds rather than every poll.
     LOOPS=$((LOOPS + 1))
     if [ $((LOOPS % 5)) -eq 0 ]; then
@@ -175,9 +174,11 @@ while true; do
     TODAY=$(today_number)
     if [ -n "$TODAY" ] && [ "$TODAY" -gt "$DAY" ]; then
         log "new day $TODAY (was $DAY); resetting"
-        DAY="$TODAY"; USED=0; UNLOCKED=0
+        DAY="$TODAY"; USED=0; UNLOCKED=0; BONUS_MINUTES=0
         save_state
     fi
+    # A command picked up on the new day belongs to that day, not yesterday's state.
+    apply_command
 
     if [ "$ENABLED" = "1" ]; then
         FG=$(foreground_package)

@@ -423,6 +423,47 @@ public class UpdateManagerTest {
     }
 
     @Test
+    public void olderButStillNewRemoteCannotReplaceNewerVerifiedReadyUpdate() throws Exception {
+        UpdateManager.Metadata cached = metadata(manifest().put("versionCode", nextVersion + 1));
+        File ready = writeReady(cached);
+        PackageInfo cachedArchive = archive();
+        cachedArchive.versionCode = cached.versionCode;
+        registerArchive(cached, cachedArchive);
+        // GitHub latest can move backwards while this TV still has an older installed version.
+        UpdateManager.Metadata remote = metadata(manifest());
+        packages.setPackageArchiveInfo(new File(UpdateManager.directory(context), "download.part")
+                .getAbsolutePath(), archive());
+        packages.setPackageArchiveInfo(UpdateManager.apkFile(context, remote).getAbsolutePath(), archive());
+        responses.add(response(remote.json.getBytes(StandardCharsets.UTF_8)));
+        responses.add(response(apkBytes));
+
+        UpdateManager.check(context, new UpdateManager.Cancellation());
+
+        assertEquals(cached.versionCode, UpdateManager.snapshot(context).versionCode);
+        assertEquals(cached.versionCode, UpdateManager.readyUpdate(context).versionCode);
+        assertTrue(ready.exists());
+        assertEquals("A validated newer package needs no older APK download", 1, requests.size());
+    }
+
+    @Test
+    public void newerCachedCandidateMustBeValidatedBeforeIgnoringRemoteUpdate() throws Exception {
+        UpdateManager.Metadata cached = metadata(manifest().put("versionCode", nextVersion + 1));
+        File ready = writeReady(cached);
+        try (FileOutputStream output = new FileOutputStream(ready)) {
+            output.write(new byte[apkBytes.length]);
+        }
+        UpdateManager.Metadata remote = metadata(manifest());
+        registerArchive(remote, archive());
+        responses.add(response(remote.json.getBytes(StandardCharsets.UTF_8)));
+        responses.add(response(apkBytes));
+
+        UpdateManager.check(context, new UpdateManager.Cancellation());
+
+        assertEquals(remote.versionCode, UpdateManager.readyUpdate(context).versionCode);
+        assertEquals(2, requests.size());
+    }
+
+    @Test
     public void nonNewRemoteVersionNeverDownloadsOrExposesInstallableUpdate() throws Exception {
         JSONObject remote = manifest().put("versionCode", installedVersion());
         responses.add(response(remote.toString().getBytes(StandardCharsets.UTF_8)));

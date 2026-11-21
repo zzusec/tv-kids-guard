@@ -132,6 +132,25 @@ public class RemoteAuthTest {
     }
 
     @Test
+    public void incompleteConfirmationDoesNotDuplicateThePasswordInstructionOrAuthenticate() {
+        prefs.setPassword("135790");
+        AdminAuthActivity activity = startAuth();
+        TextView prompt = activity.findViewById(R.id.lock_prompt);
+        press(activity, KeyEvent.KEYCODE_DPAD_CENTER);
+        assertEquals("请输入 6 位家长密码", prompt.getText().toString());
+        digits(activity, "135");
+        press(activity, KeyEvent.KEYCODE_DPAD_CENTER);
+        String message = prompt.getText().toString();
+        assertTrue(message.contains("密码未输完整"));
+        assertEquals("The normal instruction must only appear once", 2,
+                message.split("请输入 6 位家长密码", -1).length);
+        assertEquals("●●●", ((TextView) activity.findViewById(R.id.lock_input)).getText().toString());
+        assertEquals(0, prefs.getFailCount());
+        assertFalse(AdminSession.isActive());
+        assertFalse(activity.isFinishing());
+    }
+
+    @Test
     public void parentGateDoesNotClaimQuotaIsExhaustedWhileProtectionIsOff() {
         prefs.setPassword("135790");
         prefs.setUsedSeconds(Prefs.DEFAULT_LIMIT_MINUTES * 60L);
@@ -372,7 +391,7 @@ public class RemoteAuthTest {
         showDialog(false, 4, values);
         AdminAuthActivity activity = startAuth();
         for (int key : new int[] {KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN,
-                KeyEvent.KEYCODE_VOLUME_MUTE, KeyEvent.KEYCODE_POWER}) {
+                KeyEvent.KEYCODE_VOLUME_MUTE, KeyEvent.KEYCODE_POWER, KeyEvent.KEYCODE_TV_POWER}) {
             for (int action : new int[] {KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP}) {
                 assertFalse(dialog.dispatchKeyEvent(new KeyEvent(action, key)));
                 assertFalse(activity.dispatchKeyEvent(new KeyEvent(action, key)));

@@ -108,26 +108,26 @@ public class OnScreenLockTest {
 
     @Test
     public void parentEntryIconAndPadHaveExplicitRoundTripNavigation() {
-        assertEquals("parent_manage", activity.getWindow().getDecorView().findFocus().getTag());
+        assertEquals("password_entry", activity.getWindow().getDecorView().findFocus().getTag());
         assertTrue("A remote with unproven digits is offered the icon instead of the pad",
                 ScreenRemote.offersIcon(activity));
         ScreenRemote.press(activity, KeyEvent.KEYCODE_DPAD_DOWN);
         assertEquals("keypad_request", activity.getWindow().getDecorView().findFocus().getTag());
         ScreenRemote.press(activity, KeyEvent.KEYCODE_DPAD_UP);
-        assertEquals("parent_manage", activity.getWindow().getDecorView().findFocus().getTag());
+        assertEquals("password_entry", activity.getWindow().getDecorView().findFocus().getTag());
         ScreenRemote.press(activity, KeyEvent.KEYCODE_DPAD_RIGHT);
         assertEquals("keypad_request", activity.getWindow().getDecorView().findFocus().getTag());
         ScreenRemote.openPad(activity);
         assertEquals("key_1", activity.getWindow().getDecorView().findFocus().getTag());
         ScreenRemote.press(activity, KeyEvent.KEYCODE_DPAD_UP);
-        assertEquals("parent_manage", activity.getWindow().getDecorView().findFocus().getTag());
+        assertEquals("password_entry", activity.getWindow().getDecorView().findFocus().getTag());
         assertLocked();
         assertFalse(AdminSession.isActive());
         assertNull(shadowOf(activity).getNextStartedActivity());
     }
 
     @Test
-    public void everyOkAliasOpensParentGateOnceOnReleaseWithoutUnlocking() {
+    public void everyEmptyOkAliasStaysOnTheLockWithoutAnotherGate() {
         int[] aliases = {KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
                 KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_BUTTON_A,
                 KeyEvent.KEYCODE_BUTTON_SELECT};
@@ -136,9 +136,8 @@ public class OnScreenLockTest {
             assertNull(shadowOf(activity).getNextStartedActivity());
             ScreenRemote.send(activity, KeyEvent.ACTION_DOWN, alias, 2, 0);
             ScreenRemote.send(activity, KeyEvent.ACTION_UP, alias, 0, 0);
-            Intent gate = shadowOf(activity).getNextStartedActivity();
-            assertNotNull("Alias " + alias, gate);
-            assertEquals(AdminAuthActivity.class.getName(), gate.getComponent().getClassName());
+            assertNull("Empty confirmation must not open another password page, alias=" + alias,
+                    shadowOf(activity).getNextStartedActivity());
             ScreenRemote.send(activity, KeyEvent.ACTION_UP, alias, 0, 0);
             assertNull(shadowOf(activity).getNextStartedActivity());
             assertLocked();
@@ -156,20 +155,22 @@ public class OnScreenLockTest {
     }
 
     @Test
-    public void onScreenPinHandsOverToTheParentPanelAndKeepsTheQuotaLock() {
+    public void onScreenPinImmediatelyReleasesTheLockAndPreservesQuota() {
         int limit = prefs.getDailyLimitMinutes();
         ScreenRemote.digits(activity, "13579");
         assertEquals("●●●●●", input());
         assertLocked();
         ScreenRemote.digits(activity, "0");
-        // Since 2.5.12 a correct PIN proves a parent is present; it buys no viewing time.
-        assertTrue(service.isLocked());
+        assertFalse("正确PIN必须立即放行，不能等家长再退出面板", service.isLocked());
+        assertFalse(prefs.isGuardActive());
+        assertTrue(prefs.isParentGraceDeferringLock());
         assertTrue(AdminSession.isActive());
         Intent panel = shadowOf(activity).getNextStartedActivity();
         assertNotNull(panel);
         assertEquals(MainActivity.class.getName(), panel.getComponent().getClassName());
         assertEquals(limit, prefs.getDailyLimitMinutes());
         assertEquals(1800L, prefs.getUsedSeconds());
+        assertEquals(0L, prefs.getBonusSeconds());
     }
 
     @Test
@@ -185,23 +186,23 @@ public class OnScreenLockTest {
         assertLocked();
         ScreenRemote.press(activity, KeyEvent.KEYCODE_BACK);
         assertEquals("", service.lockInput());
-        assertEquals("parent_manage", activity.getWindow().getDecorView().findFocus().getTag());
+        assertEquals("password_entry", activity.getWindow().getDecorView().findFocus().getTag());
         assertLocked();
     }
 
     @Test
-    public void wrongPinCooldownDisablesThePadButNotParentManagement() {
+    public void wrongPinCooldownDisablesInputWithoutOfferingAnotherAuthenticationPage() {
         for (int i = 0; i < 3; i++) ScreenRemote.digits(activity, "222222");
         assertEquals(3, prefs.getFailCount());
         ScreenRemote.assertKeysEnabled(activity, false);
-        assertEquals("parent_manage", activity.getWindow().getDecorView().findFocus().getTag());
+        assertEquals("password_entry", activity.getWindow().getDecorView().findFocus().getTag());
         ScreenRemote.press(activity, KeyEvent.KEYCODE_DPAD_DOWN);
-        assertEquals("parent_manage", activity.getWindow().getDecorView().findFocus().getTag());
+        assertEquals("password_entry", activity.getWindow().getDecorView().findFocus().getTag());
         ScreenRemote.press(activity, KeyEvent.KEYCODE_1);
         assertEquals("", service.lockInput());
         ScreenRemote.press(activity, KeyEvent.KEYCODE_DPAD_UP);
         ScreenRemote.press(activity, KeyEvent.KEYCODE_DPAD_CENTER);
-        assertNotNull(shadowOf(activity).getNextStartedActivity());
+        assertNull(shadowOf(activity).getNextStartedActivity());
         assertLocked();
         assertFalse(AdminSession.isActive());
         ScreenRemote.expireCooldown(prefs);
@@ -213,18 +214,18 @@ public class OnScreenLockTest {
     }
 
     @Test
-    public void missingServiceDisablesThePadAndPreservesTheParentEntry() {
+    public void missingServiceDisablesThePadWithoutOpeningAnotherGate() {
         serviceController.destroy();
         serviceController = null;
         ShadowLooper.idleMainLooper(1, TimeUnit.SECONDS);
         ScreenRemote.assertKeysEnabled(activity, false);
-        assertEquals("parent_manage", activity.getWindow().getDecorView().findFocus().getTag());
+        assertEquals("password_entry", activity.getWindow().getDecorView().findFocus().getTag());
         assertEquals("正在恢复服务…", ((TextView) activity.findViewById(R.id.lock_prompt))
                 .getText().toString());
         ScreenRemote.press(activity, KeyEvent.KEYCODE_DPAD_RIGHT);
-        assertEquals("parent_manage", activity.getWindow().getDecorView().findFocus().getTag());
+        assertEquals("password_entry", activity.getWindow().getDecorView().findFocus().getTag());
         ScreenRemote.press(activity, KeyEvent.KEYCODE_NUMPAD_ENTER);
-        assertNotNull(shadowOf(activity).getNextStartedActivity());
+        assertNull(shadowOf(activity).getNextStartedActivity());
         assertFalse(AdminSession.isActive());
     }
 

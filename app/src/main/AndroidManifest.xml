@@ -59,6 +59,7 @@
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
     <application
+        android:name=".TvGuardApplication"
         android:allowBackup="false"
         android:banner="@mipmap/tv_banner"
         android:icon="@mipmap/ic_launcher"
@@ -99,6 +100,10 @@
 
         <service
             android:name=".GuardService"
+            android:exported="false" />
+
+        <service
+            android:name=".ParentWebService"
             android:exported="false" />
 
         <service

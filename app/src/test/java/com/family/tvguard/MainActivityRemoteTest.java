@@ -134,9 +134,65 @@ public class MainActivityRemoteTest {
     }
 
     @Test
+    public void enteringPanelKeepsDefaultAllowanceWithoutOpeningAnEditor() {
+        startPanel(true);
+
+        assertFocused("00");
+        assertEquals("00 返回电视", action("00").getText().toString());
+        assertNull(ShadowDialog.getLatestDialog());
+        assertEquals(30, prefs.getDailyLimitMinutes());
+        assertEquals(0L, prefs.getUsedSeconds());
+    }
+
+    @Test
+    public void extraConfirmationAfterPinReturnsToTvWithoutEditingTheAllowance() {
+        startPanel(true);
+
+        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_CENTER);
+
+        assertTrue(activity.isFinishing());
+        assertNull(ShadowDialog.getLatestDialog());
+        assertEquals(30, prefs.getDailyLimitMinutes());
+        assertEquals(0L, prefs.getUsedSeconds());
+        Intent home = shadowOf(activity).getNextStartedActivity();
+        assertNotNull(home);
+        assertTrue(home.hasCategory(Intent.CATEGORY_HOME));
+    }
+
+    @Test
+    public void reusedPanelReturnsToSafeFocusAndClearsTheOldNumericShortcut() {
+        startPanel(true);
+        focusAction("12");
+        press(activity.getWindow(), KeyEvent.KEYCODE_1);
+
+        controller.newIntent(new Intent(context, MainActivity.class));
+
+        assertFocused("00");
+        press(activity.getWindow(), KeyEvent.KEYCODE_2);
+        assertNull(ShadowDialog.getLatestDialog());
+        assertEquals(30, prefs.getDailyLimitMinutes());
+        assertFalse(activity.isFinishing());
+    }
+
+    @Test
+    public void clearUsageActionKeepsTheSameColumnWidthAsOtherActions() {
+        startPanel(true);
+
+        assertEquals(action("00").getWidth(), action("77").getWidth());
+        Rect first = new Rect();
+        Rect clear = new Rect();
+        assertTrue(action("00").getGlobalVisibleRect(first));
+        assertTrue(action("77").getGlobalVisibleRect(clear));
+        assertEquals(first.left, clear.left);
+        assertEquals(first.right, clear.right);
+    }
+
+    @Test
     public void actualDpadMovesFocusAndOkActivatesOnlyOnRelease() {
         startPanel(false);
         // Protection off: rows are 00 11 / 12 13 / 99. UP stays in column 0, RIGHT crosses.
+        assertFocused("00");
+        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_DOWN);
         assertFocused("12");
         press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_UP);
         assertFocused("00");
@@ -159,6 +215,7 @@ public class MainActivityRemoteTest {
     @Test
     public void dailyLimitDialogTakesRemoteDigitsAndSaves() {
         startPanel(false);
+        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_DOWN);
         press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_CENTER);
         PinDialog dialog = latestPinDialog();
         Window window = dialog.getWindow();
@@ -177,6 +234,7 @@ public class MainActivityRemoteTest {
     @Test
     public void directionOnlyDailyLimitSavesTheUpperBoundary() {
         startPanel(false);
+        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_DOWN);
         press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_CENTER);
         PinDialog dialog = latestPinDialog();
         virtualDigits(dialog.getWindow(), "1440");
@@ -189,6 +247,7 @@ public class MainActivityRemoteTest {
     @Test
     public void directionOnlyDailyLimitRejectsZeroAndOverMaximum() {
         startPanel(false);
+        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_DOWN);
         for (String invalid : new String[] {"0", "1441"}) {
             press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_CENTER);
             PinDialog dialog = latestPinDialog();
@@ -201,7 +260,6 @@ public class MainActivityRemoteTest {
     @Test
     public void directionOnlyPasswordChangeReauthenticatesAndConfirmsTheNewPin() {
         startPanel(false);
-        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_UP);
         press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_RIGHT);
         assertFocused("11");
         press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_CENTER);
@@ -220,6 +278,7 @@ public class MainActivityRemoteTest {
         serviceController = Robolectric.buildService(GuardService.class).create();
         startPanel(true);
         press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_DOWN);
+        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_DOWN);
         assertFocused("22");
         press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_CENTER);
         virtualDigits(latestPinDialog().getWindow(), "15");
@@ -231,6 +290,7 @@ public class MainActivityRemoteTest {
     @Test
     public void virtualConfirmationCannotSaveAfterParentSessionIsRevoked() {
         startPanel(false);
+        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_DOWN);
         press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_CENTER);
         PinDialog dialog = latestPinDialog();
         virtualDigits(dialog.getWindow(), "45");
@@ -246,6 +306,7 @@ public class MainActivityRemoteTest {
     @Test
     public void virtualConfirmationRechecksASessionThatExpiresWhileOkIsHeld() {
         startPanel(false);
+        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_DOWN);
         press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_CENTER);
         PinDialog dialog = latestPinDialog();
         Window window = dialog.getWindow();
@@ -262,6 +323,7 @@ public class MainActivityRemoteTest {
     @Test
     public void statusRefreshKeepsTheSameButtonsAndSelectedAction() {
         startPanel(true);
+        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_DOWN);
         press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_RIGHT);
         assertFocused("13");
         ViewGroup menu = activity.findViewById(R.id.menu_actions);
@@ -307,7 +369,6 @@ public class MainActivityRemoteTest {
     @Test
     public void passwordActionStillRequiresSecondMaskedPin() {
         startPanel(false);
-        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_UP);
         assertFocused("00");
         press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_RIGHT);
         assertFocused("11");
@@ -341,6 +402,7 @@ public class MainActivityRemoteTest {
     @Test
     public void dpadNavigationClearsAnAbandonedNumericShortcut() {
         startPanel(false);
+        press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_DOWN);
         press(activity.getWindow(), KeyEvent.KEYCODE_1);
         press(activity.getWindow(), KeyEvent.KEYCODE_DPAD_RIGHT);
         assertFocused("13");
@@ -362,10 +424,24 @@ public class MainActivityRemoteTest {
             assertFalse(activity.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, code)));
             assertFalse(activity.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, code)));
         }
-        assertFocused("12");
+        assertFocused("00");
         assertNull(ShadowDialog.getLatestDialog());
         assertTrue(AdminSession.isActive());
         assertFalse(AdminSession.isMaintenanceActive());
+    }
+
+    @Test
+    public void tvPowerRemainsUnhandledAfterTheParentSessionExpires() {
+        startPanel(false);
+        AdminSession.revoke();
+
+        assertFalse(activity.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN,
+                KeyEvent.KEYCODE_TV_POWER)));
+        assertFalse(activity.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP,
+                KeyEvent.KEYCODE_TV_POWER)));
+
+        assertFalse(activity.isFinishing());
+        assertNull(shadowOf(activity).getNextStartedActivity());
     }
 
     @Test
@@ -430,7 +506,7 @@ public class MainActivityRemoteTest {
             assertTrue(button.getGlobalVisibleRect(visible));
             assertEquals("All actions fit on the TV without scrolling", button.getHeight(), visible.height());
         }
-        assertEquals("00 关闭面板", action("00").getText().toString());
+        assertEquals("00 返回电视", action("00").getText().toString());
         assertEquals("44 关闭防护", action("44").getText().toString());
     }
 

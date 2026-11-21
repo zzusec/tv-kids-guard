@@ -14,7 +14,6 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.TextView;
-import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 
@@ -25,13 +24,11 @@ public class LockActivity extends Activity {
     private TextView promptView;
     private TextView inputView;
     private TextView titleView;
-    private Button parentButton;
     private RemoteKeypad.NumericPad keypad;
     private RemoteInputMode inputMode;
     private Prefs prefs;
+    private WindowVisibility windowVisibility;
     private boolean rejected;
-    private boolean physicalInput;
-    private int parentSelectKey;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
     private final Runnable ticker = new Runnable() {
@@ -95,6 +92,10 @@ public class LockActivity extends Activity {
         super.onCreate(savedInstanceState);
         instance = this;
         prefs = new Prefs(this);
+        windowVisibility = new WindowVisibility(this, visible -> {
+            GuardService service = GuardService.get();
+            if (service != null) service.onLockActivityVisibility(visible);
+        });
         // Deliberately no FLAG_KEEP_SCREEN_ON: a lock screen that holds the panel awake is a
         // television that can never stand by, and standby the framework never sees is standby the
         // counter charges. Measured on the BRAVIA 4K 2015: with this window on screen it was the
@@ -108,16 +109,13 @@ public class LockActivity extends Activity {
         titleView = findViewById(R.id.lock_title);
         promptView = findViewById(R.id.lock_prompt);
         inputView = findViewById(R.id.lock_input);
-        parentButton = findViewById(R.id.parent_manage);
-        parentButton.setOnClickListener(view -> openParentGate(this));
         keypad = new RemoteKeypad.NumericPad(this, new RemoteKeypad.NumericListener() {
             @Override public void onDigit(int digit) { enterDigit(digit); }
             @Override public void onDelete() { deleteDigit(); refreshUi(); }
             @Override public void onConfirm() { submitPin(); refreshUi(); }
         });
         ((FrameLayout) findViewById(R.id.keypad_host)).addView(keypad);
-        inputMode = new RemoteInputMode(this, parentButton, keypad, this::configureInputLayout);
-        keypad.setUpperFocusTarget(parentButton);
+        inputMode = new RemoteInputMode(this, inputView, keypad, this::configureInputLayout);
         LinearLayout.LayoutParams icon = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, Math.round(48 * getResources()
                 .getDisplayMetrics().density));
@@ -125,13 +123,16 @@ public class LockActivity extends Activity {
         icon.gravity = Gravity.CENTER_HORIZONTAL;
         ((LinearLayout) findViewById(R.id.entry_copy)).addView(inputMode.requestButton(), icon);
         configureInputLayout();
-        parentButton.requestFocus();
+        inputMode.focusEntry();
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN
                 | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
                 | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
     }
 
     private void configureInputLayout() {
+        // The entry replaces the former parent button as the pad's upper focus target.
+        inputView.setFocusable(true);
+        inputView.setFocusableInTouchMode(true);
         int widthDp = getResources().getConfiguration().screenWidthDp;
         float density = getResources().getDisplayMetrics().density;
         boolean showPad = inputMode.usesOnScreen();
@@ -159,7 +160,7 @@ public class LockActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         inputMode.refresh();
-        parentButton.requestFocus();
+        inputMode.focusEntry();
         refreshUi();
     }
 
@@ -172,10 +173,7 @@ public class LockActivity extends Activity {
             finishAuthorized();
             return;
         }
-        GuardService service = GuardService.get();
-        if (service != null) {
-            service.onLockActivityVisibility(true);
-        }
+        windowVisibility.start();
         handler.removeCallbacks(ticker);
         handler.post(ticker);
         enterLockTask();
@@ -201,10 +199,6 @@ public class LockActivity extends Activity {
 
     /** The parent gate belongs to the allowlisted app, so opening it must not end Lock Task. */
     static void openParentGate(Context ctx) {
-        GuardService service = GuardService.get();
-        if (service != null) {
-            service.setParentUiVisible(true);
-        }
         AdminAuthActivity.launch(instance != null ? instance : ctx);
     }
 
@@ -271,20 +265,26 @@ public class LockActivity extends Activity {
     @Override
     protected void onPause() {
         GuardService service = GuardService.get();
-        if (service != null) {
-            service.onLockActivityVisibility(false);
-        }
+        if (service != null) service.clearLockInput();
+        if (windowVisibility != null) windowVisibility.stop();
         super.onPause();
+    }
+
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (windowVisibility != null) windowVisibility.focusChanged(hasFocus);
     }
 
     @Override
     protected void onStop() {
+        if (windowVisibility != null) windowVisibility.stop();
         handler.removeCallbacks(ticker);
         super.onStop();
     }
 
     @Override
     protected void onDestroy() {
+        if (windowVisibility != null) windowVisibility.stop();
         handler.removeCallbacksAndMessages(null);
         if (instance == this) {
             instance = null;
@@ -304,6 +304,7 @@ public class LockActivity extends Activity {
         handler.postDelayed(() -> {
             if (isLockActive() && !AdminSession.isMaintenanceActive()
                     && !AdminAuthActivity.isVisible() && !MainActivity.isAuthorizedVisible()
+                    && !GuardService.isParentUiStarting()
                     && !prefs.isParentGraceDeferringLock()) {
                 launch(this);
             }
@@ -330,41 +331,17 @@ public class LockActivity extends Activity {
         int digit = PinDialog.digitOf(code);
         if (digit >= 0) {
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
-                cancelParentSelect();
-                physicalInput = true;
                 inputMode.onPhysicalDigit(event);
                 keypad.usePhysicalInput();
                 enterDigit(digit);
             }
             return true;
         }
-        if (!RemoteKeypad.isSelectKey(code)) cancelParentSelect();
         if (inputMode.handleKeyEvent(event)) return true;
-        if (parentButton.hasFocus()) {
-            if (code == KeyEvent.KEYCODE_DPAD_DOWN || code == KeyEvent.KEYCODE_DPAD_RIGHT) {
-                if (event.getAction() == KeyEvent.ACTION_DOWN && keypad.isEnabled()) {
-                    physicalInput = false;
-                    keypad.focusFirstKey();
-                }
-                return true;
-            }
-            if (!physicalInput) {
-                if (RemoteKeypad.isSelectKey(code)) {
-                    if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
-                        parentSelectKey = code;
-                        parentButton.setPressed(true);
-                    } else if (event.getAction() == KeyEvent.ACTION_UP) {
-                        boolean activate = parentSelectKey == code && !event.isCanceled();
-                        cancelParentSelect();
-                        if (activate) parentButton.performClick();
-                    }
-                    return true;
-                }
-                if (RemoteKeypad.isNavigationKey(code)) return true;
-            }
-        }
-        if (RemoteKeypad.isNavigationKey(code) && code != KeyEvent.KEYCODE_DPAD_LEFT) {
-            physicalInput = false;
+        if (inputView.hasFocus() && inputMode.usesOnScreen()
+                && (code == KeyEvent.KEYCODE_DPAD_DOWN || code == KeyEvent.KEYCODE_DPAD_RIGHT)) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) keypad.focusFirstKey();
+            return true;
         }
         if (keypad.handleKeyEvent(event)) {
             refreshUi();
@@ -374,31 +351,18 @@ public class LockActivity extends Activity {
             return true;
         }
         if (RemoteKeypad.isSelectKey(code)) {
-            GuardService service = GuardService.get();
-            if (service == null || service.lockInput().isEmpty()) {
-                openParentGate(this);
-            } else {
-                submitPin();
-            }
+            // Stay on this input surface. Empty OK must not open another password page.
+            submitPin();
         } else if (code == KeyEvent.KEYCODE_DEL || code == KeyEvent.KEYCODE_DPAD_LEFT) {
             deleteDigit();
         } else if (code == KeyEvent.KEYCODE_BACK) {
             GuardService service = GuardService.get();
-            if (service != null) {
-                int length = service.lockInput().length();
-                for (int i = 0; i < length; i++) service.deleteLockDigit();
-            }
+            if (service != null) service.clearLockInput();
             rejected = false;
-            physicalInput = false;
-            parentButton.requestFocus();
+            inputView.requestFocus();
         }
         refreshUi();
         return true;
-    }
-
-    private void cancelParentSelect() {
-        parentSelectKey = 0;
-        parentButton.setPressed(false);
     }
 
     private void deleteDigit() {
@@ -434,7 +398,10 @@ public class LockActivity extends Activity {
         titleView.setText("今日电视时长已用完");
         boolean canInput = service != null && prefs.lockoutRemainingSeconds() == 0L;
         keypad.setEnabled(canInput);
-        if (!canInput && !parentButton.hasFocus()) parentButton.requestFocus();
+        // The entry remains focusable during cooldown and when returning from the number pad.
+        inputView.setFocusable(true);
+        inputView.setFocusableInTouchMode(true);
+        if (!canInput) inputView.requestFocus();
         inputMode.syncRequestVisibility();
         if (service == null) {
             promptView.setText("正在恢复服务…");
@@ -451,7 +418,7 @@ public class LockActivity extends Activity {
             inputView.setText("");
         } else {
             promptView.setText(prefs.needsPasswordSetup()
-                    ? "请家长按 OK 设置密码"
+                    ? "请输入出厂密码后设置家长密码"
                     : "输入 6 位家长密码进入家长面板");
             StringBuilder mask = new StringBuilder();
             for (int i = 0; i < service.lockInput().length(); i++) {

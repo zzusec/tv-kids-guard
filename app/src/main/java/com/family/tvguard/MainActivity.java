@@ -70,6 +70,7 @@ public class MainActivity extends Activity {
         super.onCreate(state);
         instance = this;
         prefs = new Prefs(this);
+        ParentWebService.start(this);
         UpdateInstaller.recover(this);
         UpdateManager.schedule(this);
         if (!requireParent()) {
@@ -89,7 +90,17 @@ public class MainActivity extends Activity {
         }
         GuardService.start(this);
         refreshStatus();
-        actionButtons.get("12").requestFocus();
+        // PIN entry submits on its final digit. An extra OK must not open quota editing.
+        actionButtons.get("00").requestFocus();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        shortcut.setLength(0);
+        Button backToTv = actionButtons.get("00");
+        if (backToTv != null) backToTv.requestFocus();
     }
 
     private void configurePanel() {
@@ -130,7 +141,7 @@ public class MainActivity extends Activity {
      * focusing down - which is exactly what still has to be confirmed on the television.
      */
     private static final String[][][] ACTION_ROWS = {
-            {{"00", "关闭面板"}, {"11", "改密码"}},
+            {{"00", "返回电视"}, {"11", "改密码"}},
             {{"12", "修改每日时长"}, {"13", "检查更新"}},
             {{"22", "临时加时长"}, {"33", "立即锁定"}},
             {{"44", "关闭防护"}, {"55", "开启防卸载", "99", "启用防护"}},
@@ -167,6 +178,12 @@ public class MainActivity extends Activity {
                 params.setMarginStart(column == 0 ? 0 : gap);
                 params.topMargin = index == 0 ? 0 : gap;
                 row.addView(slot, params);
+            }
+            if (ACTION_ROWS[index].length == 1) {
+                // A single action keeps the same column width as the paired rows above it.
+                LinearLayout.LayoutParams empty = new LinearLayout.LayoutParams(0, 0, 1f);
+                empty.setMarginStart(gap);
+                row.addView(new View(this), empty);
             }
             menu.addView(row);
         }
@@ -277,7 +294,8 @@ public class MainActivity extends Activity {
                 // 77 清零今天已看 only means something while the guard is counting.
                 return prefs.isProtectionEnabled();
             case "55":
-                return prefs.isProtectionEnabled() && !DeviceProtection.isAdminActive(this);
+                return prefs.isProtectionEnabled() && !DeviceProtection.isAdminActive(this)
+                        && DeviceProtection.canActivateAdmin(this);
             case "99":
                 return !prefs.isProtectionEnabled();
             default:
@@ -387,7 +405,8 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        if (PinDialog.isVolumeKey(event.getKeyCode()) || event.getKeyCode() == KeyEvent.KEYCODE_POWER) {
+        if (PinDialog.isVolumeKey(event.getKeyCode()) || event.getKeyCode() == KeyEvent.KEYCODE_POWER
+                || event.getKeyCode() == KeyEvent.KEYCODE_TV_POWER) {
             return super.dispatchKeyEvent(event);
         }
         // Panel navigation is consumed for both DOWN and UP, before any action filtering: if the
@@ -617,21 +636,34 @@ public class MainActivity extends Activity {
             return;
         }
         showPin("临时加时长", "仅对今天有效。输入 1-" + left + " 分钟", 2, false, value -> {
+            // A web command or midnight rollover may have changed the allowance since opening.
+            long remaining = Prefs.MAX_BONUS_MINUTES - prefs.getBonusSeconds() / 60L;
+            if (remaining <= 0L) {
+                toast("今天最多增加 " + Prefs.MAX_BONUS_MINUTES + " 分钟");
+                refreshStatus();
+                return;
+            }
             if (!canExecuteAction("22")) {
+                toast("防护状态已变化，请重新选择加时");
+                refreshStatus();
                 return;
             }
             int minutes = Integer.parseInt(value);
             GuardService service = GuardService.get();
-            if (minutes < 1 || minutes > left) {
-                toast("请输入 1-" + left + " 之间的分钟数");
+            if (minutes < 1 || minutes > remaining) {
+                toast("请输入 1-" + remaining + " 之间的分钟数");
             } else if (service == null) {
                 GuardService.start(this);
                 toast("服务正在恢复，请稍后重试");
             } else {
-                service.grantBonusMinutes(minutes);
-                toast("今天已临时增加 " + minutes + " 分钟");
-                refreshStatus();
+                try {
+                    service.grantBonusMinutes(minutes);
+                    toast("今天已临时增加 " + minutes + " 分钟");
+                } catch (IllegalArgumentException e) {
+                    toast(e.getMessage());
+                }
             }
+            refreshStatus();
         });
     }
 
@@ -728,11 +760,12 @@ public class MainActivity extends Activity {
             refreshStatus();
             return;
         }
-        Intent intent = DeviceProtection.activationIntent(this);
-        if (getPackageManager().resolveActivity(intent, 0) == null) {
-            toast("无法找到设备管理确认页，请保持设置保护开启");
+        if (!DeviceProtection.canActivateAdmin(this)) {
+            toast("当前系统不支持开启设备管理员防卸载，请保持设置保护开启");
+            refreshStatus();
             return;
         }
+        Intent intent = DeviceProtection.activationIntent(this);
         if (!AdminSession.grantMaintenance()) {
             requireParent();
             return;
@@ -813,6 +846,9 @@ public class MainActivity extends Activity {
             actionButtons.get("12").requestFocus();
         }
         StringBuilder warning = new StringBuilder();
+        if (!ParentWebService.lastError().isEmpty()) {
+            warning.append(ParentWebService.lastError()).append('\n');
+        }
         if (prefs.isProtectionEnabled()) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
                 warning.append("倒计时未开启：需允许悬浮窗权限\n");
@@ -826,7 +862,9 @@ public class MainActivity extends Activity {
                 warning.append(AppLockService.lastError()).append('\n');
             }
             if (!DeviceProtection.isUninstallProtected(this)) {
-                warning.append("防卸载未开启：按 55 开启\n");
+                warning.append(DeviceProtection.canActivateAdmin(this)
+                        ? "防卸载未开启：按 55 开启\n"
+                        : "当前系统不支持开启设备管理员防卸载，请保持设置保护开启\n");
             }
         }
         if (!GuardService.lastFailure().isEmpty()) {
@@ -848,15 +886,13 @@ public class MainActivity extends Activity {
      *                  the viewing session on the lock screen is the whole point of that action.
      */
     private void closePanel(boolean toDesktop) {
+        boolean wasAuthorized = AdminSession.isActive() && !prefs.needsPasswordSetup();
         AdminSession.revoke();
         GuardService service = GuardService.get();
-        // 2.5.17: a parent who authenticated and leaves the console starts the parent grace, which
-        // lasts until the television next stands by. The 2.5.15 exemption was one step wide - it
-        // covered the desktop, and the first other window spent it - so stepping out to the desktop
-        // and then opening anything else landed back on the password page, which is the loop the
-        // BRAVIA 4K 2015 reported. {@code 33 立即锁定} passes false: ending the viewing session
-        // spends the grace instead of starting one.
-        boolean steppedOutToDesktop = toDesktop && service != null && service.grantParentGrace();
+        // Only fresh configured-PIN verification grants the grace. Leaving a panel must neither
+        // manufacture authorization (including after factory setup) nor overwrite an existing one.
+        boolean steppedOutToDesktop = toDesktop && wasAuthorized
+                && prefs.isParentGraceDeferringLock();
         if (service != null) {
             service.setConsoleVisible(false);
             service.refreshProtection();
